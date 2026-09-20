@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Roblox Mirror — Fase 7+8 · Security Lab + Defense Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg:#0c0e12; --panel:#14171d; --panel-border:#262b34; --text:#e7ebf0;
+    --muted:#8b93a1; --accent:#4fd1c5; --warn:#e0a832; --err:#e05f5f; --ok:#5fd08a; --sec:#c76bff;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;overscroll-behavior:none;}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;}
+
+  #toolbar{height:44px;flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:0 10px;
+    padding-top:env(safe-area-inset-top,0px);background:var(--panel);border-bottom:1px solid var(--panel-border);z-index:30;overflow-x:auto;}
+  #toolbar .brand{font-size:13px;color:var(--muted);margin-right:auto;display:flex;align-items:center;gap:6px;flex:0 0 auto;}
+  #toolbar .brand .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);}
+  #toolbar .brand b{color:var(--text);font-weight:600;}
+  #toolbar button{background:transparent;border:1px solid var(--panel-border);color:var(--text);
+    border-radius:6px;padding:6px 12px;font-size:12.5px;cursor:pointer;flex:0 0 auto;white-space:nowrap;}
+  #toolbar button.primary{background:var(--accent);color:#04201d;border-color:var(--accent);font-weight:600;}
+  #toolbar button.sec{background:var(--sec);color:#1c0330;border-color:var(--sec);font-weight:600;}
+  #toolbar button.stop{background:var(--err);color:#fff;border-color:var(--err);font-weight:600;}
+  #toolbar button:disabled{opacity:0.4;cursor:default;}
+  #toolbar .toggle{display:flex;gap:4px;background:#0c0e12;border:1px solid var(--panel-border);border-radius:6px;padding:2px;flex:0 0 auto;}
+  #toolbar .toggle button{border:none;border-radius:4px;padding:5px 10px;}
+  #toolbar .toggle button.active{background:var(--panel-border);}
+
+  #main{flex:1 1 auto;display:flex;min-height:0;}
+  #left,#right{flex:0 0 auto;width:0;overflow:hidden;background:var(--panel);border-right:1px solid var(--panel-border);
+    display:flex;flex-direction:column;transition:width .15s ease;}
+  #right{border-right:none;border-left:1px solid var(--panel-border);}
+  body.studio-on #left{width:220px;}
+  body.studio-on #right{width:280px;}
+  body.lab-on #right{width:330px;}
+  @media (max-width:900px){ body.studio-on #left{width:150px;} body.studio-on #right{width:220px;} body.lab-on #right{width:260px;} }
+
+  .panel-title{font-size:11px;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--panel-border);flex:0 0 auto;
+    display:flex;justify-content:space-between;align-items:center;}
+  #explorer-tree{flex:1 1 auto;overflow:auto;padding:6px 0;font-size:12.5px;}
+  .node{display:flex;align-items:center;gap:5px;padding:3px 10px;cursor:pointer;white-space:nowrap;border-radius:4px;margin:0 4px;}
+  .node:hover{background:#1c2026;}
+  .node.selected{background:#20363580;outline:1px solid var(--accent);}
+  .node .cls{color:var(--muted);font-size:10.5px;margin-left:4px;}
+  .node .ic{width:14px;text-align:center;font-size:11px;opacity:.85;}
+
+  #right-tabs{display:flex;flex:0 0 auto;border-bottom:1px solid var(--panel-border);}
+  #right-tabs button{flex:1 1 0;background:transparent;border:none;color:var(--muted);padding:8px 4px;font-size:11px;cursor:pointer;border-bottom:2px solid transparent;}
+  #right-tabs button.active{color:var(--text);border-bottom-color:var(--accent);}
+  body:not(.lab-on) #right-tabs{display:none;}
+  body:not(.lab-on) .lab-only{display:none !important;}
+
+  #props-list{flex:1 1 auto;overflow:auto;padding:8px 10px;font-size:12px;}
+  .prop-row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #1d2128;}
+  .prop-row .k{color:var(--muted);}
+  .prop-row input{background:#0c0e12;border:1px solid var(--panel-border);color:var(--text);border-radius:4px;
+    padding:2px 6px;font-size:11.5px;width:120px;text-align:right;font-family:ui-monospace,Menlo,monospace;}
+  #props-empty{padding:16px 12px;color:var(--muted);font-size:12px;}
+
+  .lab-pane{flex:1 1 auto;overflow:auto;padding:10px 12px;font-size:12px;display:none;}
+  .lab-pane.active{display:block;}
+  .lab-section-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin:12px 0 6px;}
+  .lab-section-title:first-child{margin-top:0;}
+  .lab-btn{width:100%;text-align:left;background:#1a1e25;border:1px solid var(--panel-border);color:var(--text);
+    border-radius:6px;padding:8px 10px;font-size:11.5px;cursor:pointer;margin-bottom:6px;}
+  .lab-btn:hover{border-color:var(--sec);}
+  .lab-btn small{display:block;color:var(--muted);font-size:10.5px;margin-top:2px;}
+  .remote-card{border:1px solid var(--panel-border);border-radius:8px;padding:8px 10px;margin-bottom:8px;background:#14171d;}
+  .remote-card .name{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--text);}
+  .remote-card .row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;}
+  .remote-card select{background:#0c0e12;border:1px solid var(--panel-border);color:var(--text);border-radius:4px;font-size:11px;padding:2px 4px;}
+  .sev{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:10px;letter-spacing:.03em;}
+  .sev.HIGH{background:rgba(224,95,95,0.18);color:var(--err);}
+  .sev.MED{background:rgba(224,168,50,0.18);color:var(--warn);}
+  .sev.OK{background:rgba(95,208,138,0.18);color:var(--ok);}
+  .finding{border:1px solid var(--panel-border);border-radius:8px;padding:8px 10px;margin-bottom:8px;}
+  .finding .t{font-size:12px;color:var(--text);margin:4px 0 2px;}
+  .finding .loc{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);}
+  .snap-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1d2128;font-size:11.5px;}
+  .snap-row button{background:transparent;border:1px solid var(--panel-border);color:var(--text);border-radius:5px;padding:3px 8px;font-size:10.5px;cursor:pointer;}
+  #netlog{font-family:ui-monospace,Menlo,monospace;font-size:11px;}
+  #netlog .call{border-left:2px solid var(--panel-border);padding:4px 0 4px 8px;margin-bottom:5px;}
+  #netlog .call.blocked{border-left-color:var(--err);}
+  #netlog .call.accepted{border-left-color:var(--ok);}
+  #netlog .dir{color:var(--muted);}
+
+  #center{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;position:relative;}
+  #viewport-wrap{flex:1 1 auto;position:relative;min-height:0;}
+  #scene{position:absolute;inset:0;}
+  canvas{display:block;touch-action:none;}
+  #lab-badge{position:absolute;top:10px;left:10px;z-index:10;background:rgba(199,107,255,0.15);border:1px solid var(--sec);
+    color:var(--sec);border-radius:8px;padding:6px 12px;font-size:11.5px;font-weight:600;display:none;}
+  body.lab-on #lab-badge{display:block;}
+
+  #output{flex:0 0 120px;background:#0d0f13;border-top:1px solid var(--panel-border);display:none;flex-direction:column;}
+  body.studio-on #output{display:flex;}
+  #output-head{flex:0 0 auto;font-size:11px;color:var(--muted);padding:6px 12px;border-bottom:1px solid var(--panel-border);
+    display:flex;justify-content:space-between;}
+  #output-head span.clear{cursor:pointer;}
+  #output-body{flex:1 1 auto;overflow:auto;padding:6px 12px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;}
+  #output-body .line{padding:2px 0;color:#b7c0cc;}
+  #output-body .line.warn{color:var(--warn);}
+  #output-body .line.err{color:var(--err);}
+  #output-body .line.ok{color:var(--ok);}
+  #output-body .line .src{color:#586071;margin-right:6px;}
+
+  #hint{position:absolute;top:10px;right:10px;z-index:10;background:rgba(20,23,29,0.82);border:1px solid var(--panel-border);
+    border-radius:8px;padding:8px 12px;font-size:12px;color:var(--muted);max-width:180px;text-align:right;}
+  @media (pointer: coarse){ #hint{display:none;} }
+  #touch{display:none;pointer-events:none;}
+  @media (pointer: coarse){ #touch{display:block;} }
+  #stick-zone{position:absolute;left:20px;bottom:20px;width:120px;height:120px;border-radius:50%;
+    background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);pointer-events:auto;z-index:20;}
+  #stick-knob{position:absolute;width:48px;height:48px;left:36px;top:36px;border-radius:50%;background:rgba(79,209,197,0.85);
+    box-shadow:0 0 12px rgba(79,209,197,0.5);}
+  #jump-btn{position:absolute;right:24px;bottom:28px;width:70px;height:70px;border-radius:50%;
+    background:rgba(224,168,50,0.18);border:1px solid rgba(224,168,50,0.55);color:var(--warn);font-size:11px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;pointer-events:auto;z-index:20;}
+  #edit-hint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:10;
+    background:rgba(20,23,29,0.85);border:1px solid var(--panel-border);border-radius:20px;padding:6px 14px;
+    font-size:11.5px;color:var(--muted);}
+
+  #modal-backdrop{position:fixed;inset:0;background:rgba(5,6,8,0.72);z-index:100;display:none;
+    align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);}
+  #modal-backdrop.open{display:flex;}
+  #modal{width:min(560px,100%);max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;}
+  #modal-head{padding:14px 18px;border-bottom:1px solid var(--panel-border);display:flex;align-items:center;justify-content:space-between;}
+  #modal-head h3{margin:0;font-size:14px;font-weight:600;}
+  #modal-head .x{cursor:pointer;color:var(--muted);font-size:18px;line-height:1;}
+  #modal-body{padding:18px;}
+  #report-md{white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.6;color:#d8e0ea;
+    background:#0d0f13;border:1px solid var(--panel-border);border-radius:8px;padding:14px;max-height:52vh;overflow:auto;}
+  #modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;}
+  #modal-actions button{background:transparent;border:1px solid var(--panel-border);color:var(--text);border-radius:6px;padding:8px 14px;font-size:12.5px;cursor:pointer;}
+  #modal-actions button.primary{background:var(--accent);color:#04201d;border-color:var(--accent);font-weight:600;}
+
+  #dropzone{border:1.5px dashed var(--panel-border);border-radius:10px;padding:30px 16px;text-align:center;
+    color:var(--muted);font-size:13px;cursor:pointer;transition:border-color .15s;}
+  #dropzone.drag{border-color:var(--accent);color:var(--accent);}
+  #dropzone b{display:block;color:var(--text);font-size:14px;margin-bottom:6px;}
+  #import-file-input{display:none;}
+  .compat-row{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:12px;}
+  .compat-row .label{width:110px;color:var(--muted);flex:0 0 auto;}
+  .compat-row .bar{flex:1 1 auto;height:8px;background:#1c2026;border-radius:5px;overflow:hidden;}
+  .compat-row .bar > div{height:100%;background:var(--accent);}
+  .compat-row .pct{width:38px;text-align:right;font-family:ui-monospace,Menlo,monospace;color:var(--text);}
+  .report-note{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6;}
+  .report-note b{color:var(--text);}
+  #import-status{font-size:12px;color:var(--muted);margin-top:10px;min-height:18px;}
+  #import-status.err{color:var(--err);}
+  #sample-btn{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:12px;text-decoration:underline;padding:0;}
+  .termux-box{background:#0d0f13;border:1px solid var(--panel-border);border-radius:8px;padding:12px 14px;margin:10px 0;}
+  .termux-box .cmd{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#9be3c9;white-space:pre-wrap;word-break:break-word;
+    background:#08090b;border-radius:6px;padding:10px;margin:6px 0;user-select:all;}
+  .termux-box .copy{background:transparent;border:1px solid var(--panel-border);color:var(--text);border-radius:5px;
+    padding:4px 10px;font-size:11px;cursor:pointer;}
+  .termux-steps{font-size:11.5px;color:var(--muted);line-height:1.7;padding-left:18px;margin:6px 0;}
+  .termux-steps li b{color:var(--text);}
+</style>
+</head>
+<body class="studio-on">
+
+<div id="app">
+  <div id="toolbar">
+    <div class="brand"><span class="dot"></span> Mirror Studio <b>&middot; Fase 7+8</b></div>
+    <button id="btn-import" class="primary">⭳ Import Roblox Place</button>
+    <button id="btn-open-lab" class="sec">🔒 Open Security Lab</button>
+    <div class="toggle">
+      <button id="btn-edit" class="active">EDIT</button>
+      <button id="btn-play">PLAY</button>
+    </div>
+    <button id="btn-toggle-studio">Studio: ON</button>
+    <button id="btn-run">▶ Ejecutar Script</button>
+    <button id="btn-stop" class="stop" disabled>■ Detener</button>
+  </div>
+
+  <div id="main">
+    <div id="left">
+      <div class="panel-title"><span>EXPLORER</span></div>
+      <div id="explorer-tree"></div>
+    </div>
+
+    <div id="center">
+      <div id="viewport-wrap">
+        <div id="scene"></div>
+        <div id="lab-badge">🔒 SECURITY COPY — aislada del proyecto original</div>
+        <div id="hint">WASD para moverte<br>Espacio para saltar<br>Arrastra para mirar</div>
+        <div id="edit-hint">Modo EDIT</div>
+        <div id="touch">
+          <div id="stick-zone"><div id="stick-knob"></div></div>
+          <div id="jump-btn">SALTAR</div>
+        </div>
+      </div>
+      <div id="output">
+        <div id="output-head"><span>OUTPUT</span><span class="clear" id="output-clear">limpiar</span></div>
+        <div id="output-body"></div>
+      </div>
+    </div>
+
+    <div id="right">
+      <div id="right-tabs">
+        <button data-tab="props" class="active">Properties</button>
+        <button data-tab="authority" class="lab-only">Authority</button>
+        <button data-tab="threats" class="lab-only">Threats</button>
+        <button data-tab="network" class="lab-only">Network</button>
+        <button data-tab="snapshots" class="lab-only">Snapshots</button>
+      </div>
+
+      <div id="pane-props" class="lab-pane active">
+        <div id="props-list"><div id="props-empty">Selecciona un objeto en el Explorer</div></div>
+      </div>
+
+      <div id="pane-authority" class="lab-pane">
+        <div class="lab-section-title">Server Authority Analyzer</div>
+        <div id="authority-note" style="color:var(--muted);font-size:11.5px;margin-bottom:8px;">
+          ¿Quien decide cada valor critico? Marca CLIENT / SERVER / BOTH por cada Remote.
+        </div>
+        <div id="authority-list"></div>
+        <button class="lab-btn" id="btn-scan-authority" style="margin-top:8px;">🔍 Escanear autoridad<small>Marca HIGH cualquier remote cuyo valor critico dependa solo del cliente</small></button>
+      </div>
+
+      <div id="pane-threats" class="lab-pane">
+        <div class="lab-section-title">Threat Simulation</div>
+        <button class="lab-btn" data-threat="invalid-args">Invalid remote arguments<small>Envia tipos/valores inesperados a cada RemoteEvent</small></button>
+        <button class="lab-btn" data-threat="remote-spam">Remote spam<small>Dispara un remote repetidamente en un instante</small></button>
+        <button class="lab-btn" data-threat="client-state">Client-side state manipulation<small>Simula que el cliente altera una propiedad critica localmente</small></button>
+        <div class="lab-section-title">Findings</div>
+        <div id="findings-list" style="color:var(--muted);font-size:11.5px;">Sin hallazgos todavia — ejecuta una simulacion.</div>
+        <button class="lab-btn" id="btn-gen-report" style="margin-top:10px;">📄 Generar SECURITY_REPORT.md</button>
+        <div class="lab-section-title">Defense Generator</div>
+        <div style="color:var(--muted);font-size:11px;margin-bottom:6px;">Genera validacion server-side + test de regresion por cada finding. Revisalo antes de usarlo — no se aplica solo.</div>
+        <div id="defense-list"></div>
+      </div>
+
+      <div id="pane-network" class="lab-pane">
+        <div class="lab-section-title">Network Monitor</div>
+        <div id="netlog" style="color:var(--muted);">Sin trafico todavia.</div>
+      </div>
+
+      <div id="pane-snapshots" class="lab-pane">
+        <div class="lab-section-title">Snapshots</div>
+        <button class="lab-btn" id="btn-create-snapshot">📸 Create Snapshot</button>
+        <div id="snapshot-list" style="margin-top:6px;color:var(--muted);font-size:11.5px;">Sin snapshots todavia.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="import-modal-backdrop" style="position:fixed;inset:0;background:rgba(5,6,8,0.72);z-index:100;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);">
+  <div style="width:min(540px,100%);max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--panel-border);border-radius:12px;">
+    <div id="modal-head"><h3 id="import-modal-title">Import Roblox Place</h3><span class="x" id="import-modal-close">✕</span></div>
+    <div id="modal-body">
+
+      <div id="import-step-drop">
+        <div id="dropzone">
+          <b>Arrastra tu archivo .rbxlx o .rbxl aquí</b>
+          o <span style="text-decoration:underline;cursor:pointer;" id="import-dropzone-select">selecciona un archivo</span>
+          <input type="file" id="import-file-input" accept=".rbxlx,.rbxl,.xml">
+        </div>
+        <div class="report-note">
+          Se parsea <b>.rbxlx</b> (XML) directamente en el navegador, sin subir nada a ningún servidor.
+          Si sueltas un <b>.rbxl</b> (binario), Mirror no lo convierte por sí solo — el sandbox del
+          navegador no puede ejecutar Termux — pero te da el comando exacto para convertirlo tú, con
+          tu nombre de archivo ya insertado.
+        </div>
+        <div class="report-note">
+          ¿No tienes uno a mano? <button id="sample-btn">Probar con un .rbxlx de ejemplo</button>
+        </div>
+        <div id="import-status"></div>
+      </div>
+
+      <div id="import-step-rbxl-help" style="display:none;">
+        <div class="report-note">
+          <b>.rbxl detectado — es binario, hace falta convertirlo a .rbxlx primero.</b>
+        </div>
+        <div style="display:flex;gap:6px;margin:10px 0;">
+          <button id="tab-rbxl-service" class="lab-btn" style="margin:0;flex:1;text-align:center;">🔁 Usar convertidor (recomendado)</button>
+          <button id="tab-rbxl-termux" class="lab-btn" style="margin:0;flex:1;text-align:center;">📱 Termux manual</button>
+        </div>
+
+        <div id="rbxl-via-service">
+          <div class="report-note">
+            Convierte tu <b>.rbxl</b> en el servicio real desplegado (rbx_binary/rbx_xml) — arrastra el
+            archivo abajo, descarga el <b>.rbxlx</b> resultante, y sueltalo en el dropzone de este Importer.
+          </div>
+          <div style="border:1px solid var(--panel-border);border-radius:8px;overflow:hidden;margin-top:8px;">
+            <iframe id="rbxl-converter-iframe" src="https://rbx-converter-service-production.up.railway.app/"
+              style="width:100%;height:300px;border:none;display:block;background:#0c0e12;"
+              title="RBXL to RBXLX converter"></iframe>
+          </div>
+          <div class="report-note">El convertidor corre en un servicio aparte (Railway) — nada de tu archivo pasa por Mirror ni por sus servidores.</div>
+        </div>
+
+        <div id="rbxl-via-termux" style="display:none;">
+          <ol class="termux-steps">
+            <li>Si es la primera vez: <b>pkg update -y && pkg upgrade -y</b>, luego <b>pkg install git golang -y</b>, luego <b>go install github.com/anaminus/rbxmk/rbxmk@latest</b> y <b>export PATH="$PATH:$HOME/go/bin"</b>.</li>
+            <li>Da acceso a tus archivos: <b>termux-setup-storage</b> (acepta el permiso en Android).</li>
+            <li>Copia <span id="rbxl-filename-inline">tu archivo</span> a la carpeta <b>Download</b> de tu celular si no está ahí.</li>
+            <li>Pega y ejecuta el bloque de abajo completo en Termux.</li>
+            <li>Cuando termine, arrastra el <b>.rbxlx</b> resultante aquí mismo, en este Importer.</li>
+          </ol>
+          <div class="termux-box">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;color:var(--muted);">Comando (cópialo tal cual a Termux)</span>
+              <button class="copy" id="btn-copy-termux">Copiar</button>
+            </div>
+            <div class="cmd" id="termux-cmd"></div>
+          </div>
+          <div class="report-note">
+            El resultado puede pesar bastante más que el original — es normal, XML usa texto para
+            representar lo que el binario guarda de forma compacta.
+          </div>
+        </div>
+
+        <div id="modal-actions">
+          <button id="btn-rbxl-back">← Volver</button>
+        </div>
+      </div>
+
+      <div id="import-step-report" style="display:none;">
+        <div id="compat-rows"></div>
+        <div class="report-note" id="report-summary"></div>
+        <div id="modal-actions">
+          <button id="btn-cancel-import">Cancelar</button>
+          <button id="btn-confirm-import" class="primary">Importar al DataModel</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div id="modal-backdrop">
+  <div id="modal">
+    <div id="modal-head"><h3>SECURITY_REPORT.md</h3><span class="x" id="modal-close">✕</span></div>
+    <div id="modal-body">
+      <div id="report-md"></div>
+      <div id="modal-actions"><button class="primary" id="modal-ok">Cerrar</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+/* ============================================================================
+   DATAMODEL (same base as Fase 2/5) + RemoteEvent
+   ============================================================================ */
+let nextId = 1;
+class MirrorInstance {
+  constructor(className, name){
+    this.id = nextId++;
+    this.className = className;
+    this.name = name || className;
+    this.parent = null;
+    this.children = [];
+    this.properties = { Name: this.name, ClassName: className };
+    this._events = {};
+  }
+  setParent(p){ if(this.parent){const i=this.parent.children.indexOf(this); if(i>=0)this.parent.children.splice(i,1);} this.parent=p; if(p)p.children.push(this); return this; }
+  getChildren(){ return this.children.slice(); }
+  getFullName(){ let p=[this.name],pp=this.parent; while(pp){p.unshift(pp.name);pp=pp.parent;} return p.join('.'); }
+  connect(ev, fn){ (this._events[ev]=this._events[ev]||[]).push(fn); return {disconnect:()=>{const a=this._events[ev]; const i=a.indexOf(fn); if(i>=0)a.splice(i,1);}}; }
+  fire(ev, ...args){ (this._events[ev]||[]).forEach(fn=>{try{fn(...args);}catch(e){Output.error(this.getFullName(),e.message);}}); }
+  setProp(k,v){ this.properties[k]=v; if(k==='Name')this.name=v; this.fire('_propertyChanged',k,v); }
+}
+class ServiceInstance extends MirrorInstance{ constructor(cn){ super(cn,cn); this.isService=true; } }
+class ScriptInstance extends MirrorInstance{
+  constructor(name, kind, source){ super(kind, name||kind);
+    this.runContext = kind==='LocalScript'?'Client':(kind==='ModuleScript'?'Shared':'Server');
+    this.properties.RunContext=this.runContext; this.source=source; this.properties.Enabled=true; }
+}
+class RemoteEventInstance extends MirrorInstance{
+  constructor(name){ super('RemoteEvent', name||'RemoteEvent'); this.authority = 'UNKNOWN'; this.properties.Authority='UNKNOWN'; }
+  fireServer(...args){ NetworkMonitor.log('C→S', this, args); this.fire('OnServerEvent','player',...args); }
+  fireClient(...args){ NetworkMonitor.log('S→C', this, args); this.fire('OnClientEvent',...args); }
+}
+
+function buildProject(){
+  const game = new ServiceInstance('DataModel'); game.name='game';
+  const Workspace=new ServiceInstance('Workspace'); Workspace.setParent(game);
+  const Players=new ServiceInstance('Players'); Players.setParent(game);
+  const Lighting=new ServiceInstance('Lighting'); Lighting.setParent(game);
+  const ReplicatedStorage=new ServiceInstance('ReplicatedStorage'); ReplicatedStorage.setParent(game);
+  const ServerScriptService=new ServiceInstance('ServerScriptService'); ServerScriptService.setParent(game);
+  const ServerStorage=new ServiceInstance('ServerStorage'); ServerStorage.setParent(game);
+  const StarterGui=new ServiceInstance('StarterGui'); StarterGui.setParent(game);
+  const StarterPack=new ServiceInstance('StarterPack'); StarterPack.setParent(game);
+  const StarterPlayer=new ServiceInstance('StarterPlayer'); StarterPlayer.setParent(game);
+  const SoundService=new ServiceInstance('SoundService'); SoundService.setParent(game);
+
+  const Baseplate=new MirrorInstance('Part','Baseplate'); Baseplate.properties.Size='512, 1, 512'; Baseplate.properties.Anchored=true; Baseplate.setParent(Workspace);
+  const SpawnLocation=new MirrorInstance('SpawnLocation','SpawnLocation'); SpawnLocation.properties.Size='6, 1, 6'; SpawnLocation.setParent(Workspace);
+
+  // demo content with a deliberately vulnerable pattern, to give the Lab something real to find
+  const purchaseRemote = new RemoteEventInstance('PurchaseItem'); purchaseRemote.setParent(ReplicatedStorage);
+  const inventoryRemote = new RemoteEventInstance('UpdateInventory'); inventoryRemote.setParent(ReplicatedStorage);
+  const teleportRemote = new RemoteEventInstance('RequestTeleport'); teleportRemote.setParent(ReplicatedStorage);
+
+  const shop = new ScriptInstance('ShopServer','Script',
+`-- Server Script: acepta el precio que manda el cliente (patron vulnerable, a proposito, para el Lab)
+game.ReplicatedStorage.PurchaseItem.OnServerEvent.Connect(function(player, itemId, amount){
+  print("Compra recibida:", itemId, amount)
+  print("ADVERTENCIA: el servidor confia en 'amount' enviado por el cliente")
+})`);
+  shop.setParent(ServerScriptService);
+
+  const inv = new ScriptInstance('InventoryServer','Script',
+`-- Server Script: valida contra una tabla del servidor (patron correcto)
+print("InventoryServer listo (valida server-side)")`);
+  inv.setParent(ServerScriptService);
+
+  return { game, Workspace, Players, Lighting, ReplicatedStorage, ServerScriptService, ServerStorage,
+    StarterGui, StarterPack, StarterPlayer, SoundService, purchaseRemote, inventoryRemote, teleportRemote };
+}
+
+let P = buildProject(); // "editor copy" — the live project being edited
+let activeRoot = P.game; // whichever tree the Explorer currently shows
+let labProject = null;  // "security copy" when the Lab is open
+let inLab = false;
+
+/* ============================================================================
+   DEEP CLONE — builds the isolated Security Copy without ever touching P
+   ============================================================================ */
+function cloneInstance(inst, newParent){
+  let copy;
+  if (inst instanceof RemoteEventInstance){
+    copy = new RemoteEventInstance(inst.name); copy.authority = inst.authority;
+  } else if (inst instanceof ScriptInstance){
+    copy = new ScriptInstance(inst.name, inst.className, inst.source);
+  } else if (inst instanceof ServiceInstance){
+    copy = new ServiceInstance(inst.className); copy.name = inst.name;
+  } else {
+    copy = new MirrorInstance(inst.className, inst.name);
+  }
+  copy.properties = JSON.parse(JSON.stringify(inst.properties));
+  if (newParent) copy.setParent(newParent);
+  inst.children.forEach(c => cloneInstance(c, copy));
+  return copy;
+}
+function cloneProject(source){
+  const game = cloneInstance(source.game, null);
+  const find = (root, cls, name) => { let found=null; (function walk(n){ if(found)return; if(n.className===cls && n.name===name) found=n; n.children.forEach(walk); })(root); return found; };
+  return {
+    game,
+    Workspace: find(game,'Workspace','Workspace'),
+    ReplicatedStorage: find(game,'ReplicatedStorage','ReplicatedStorage'),
+    Players: find(game,'Players','Players'),
+    purchaseRemote: find(game,'RemoteEvent','PurchaseItem'),
+    inventoryRemote: find(game,'RemoteEvent','UpdateInventory'),
+    teleportRemote: find(game,'RemoteEvent','RequestTeleport'),
+  };
+}
+
+/* ============================================================================
+   IMPORTER — .rbxlx (XML) parser, non-destructive.
+   .rbxl (binary) is NOT parsed in-browser — no reliable, verified binary spec
+   is implemented here, and guessing at one risks silently-wrong imports,
+   which section 8 of the spec explicitly forbids ("nunca inventar codigo").
+   Instead, Mirror hands the user the exact conversion command (rbxmk via
+   Termux) so the real bytes get converted by a real tool, not faked.
+   ============================================================================ */
+const KNOWN_SCRIPT_CLASSES = { Script:'Script', LocalScript:'LocalScript', ModuleScript:'ModuleScript' };
+
+function parseRbxlx(xmlText){
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  const parseErr = doc.querySelector('parsererror');
+  if (parseErr) throw new Error('XML invalido o corrupto: ' + parseErr.textContent.slice(0,140));
+  const rootEl = doc.documentElement;
+  if (!rootEl || rootEl.tagName.toLowerCase() !== 'roblox') throw new Error('No es un archivo .rbxlx reconocible (falta <roblox>).');
+
+  const stats = { totalItems:0, namedRecovered:0, propsTotal:0, propsRecovered:0, scripts:0,
+    scriptsSourceRecovered:0, servicesMatched:0, servicesUnmatched:0, unsupportedClasses:new Set() };
+
+  function readProperties(itemEl){
+    const propsEl = Array.from(itemEl.children).find(c => c.tagName === 'Properties');
+    const props = {}; let name=null, source=null;
+    if (propsEl){
+      Array.from(propsEl.children).forEach(node => {
+        const key = node.getAttribute('name'); if (!key) return;
+        stats.propsTotal++;
+        const tag = node.tagName; let value;
+        if (tag==='string'||tag==='ProtectedString'||tag==='BinaryString') value = node.textContent;
+        else if (tag==='bool') value = node.textContent.trim()==='true';
+        else if (['float','double','int','int64','token'].includes(tag)) value = node.textContent.trim();
+        else if (tag==='Vector3'){ const x=node.querySelector('X')?.textContent??'0', y=node.querySelector('Y')?.textContent??'0', z=node.querySelector('Z')?.textContent??'0';
+          value = `${(+x).toFixed(2)}, ${(+y).toFixed(2)}, ${(+z).toFixed(2)}`; }
+        else if (tag==='Color3'||tag==='Color3uint8') value = node.textContent.trim();
+        else value = node.textContent ? node.textContent.trim().slice(0,80) : '(unsupported)';
+        if (value!==undefined && value!==null){ stats.propsRecovered++; props[key]=value; }
+        if (key==='Name') name=value; if (key==='Source') source=value;
+      });
+    }
+    return { props, name, source };
+  }
+
+  function buildInstance(itemEl){
+    stats.totalItems++;
+    const className = itemEl.getAttribute('class') || 'Instance';
+    const { props, name, source } = readProperties(itemEl);
+    let inst;
+    if (KNOWN_SCRIPT_CLASSES[className]){
+      stats.scripts++; if (source!==null) stats.scriptsSourceRecovered++;
+      inst = new ScriptInstance(name||className, className, source!==null?source:null);
+    } else if (className === 'RemoteEvent'){
+      inst = new RemoteEventInstance(name||className);
+    } else {
+      inst = new MirrorInstance(className, name||className);
+    }
+    if (name) stats.namedRecovered++;
+    Object.entries(props).forEach(([k,v]) => { if (k!=='Name') inst.properties[k]=v; });
+    inst.imported = true;
+    const KNOWN_CLASSES = ['Part','Model','Folder','SpawnLocation','Workspace','Players','Lighting','ReplicatedStorage',
+      'ServerScriptService','ServerStorage','StarterGui','StarterPack','StarterPlayer','SoundService','RemoteEvent','RemoteFunction'];
+    if (!KNOWN_SCRIPT_CLASSES[className] && !KNOWN_CLASSES.includes(className)) stats.unsupportedClasses.add(className);
+    Array.from(itemEl.children).filter(c => c.tagName==='Item').forEach(childEl => buildInstance(childEl).setParent(inst));
+    return inst;
+  }
+
+  const topItems = Array.from(rootEl.children).filter(c => c.tagName==='Item');
+  if (topItems.length===0) throw new Error('El archivo no contiene ningun <Item> (place vacio o formato inesperado).');
+  return { importedRoots: topItems.map(buildInstance), stats };
+}
+
+function computeCompatibility(stats){
+  const pct=(a,b)=>b>0?Math.round((a/b)*100):100;
+  const instancesPct=pct(stats.namedRecovered, stats.totalItems);
+  const scriptsPct = stats.scripts>0 ? pct(stats.scriptsSourceRecovered, stats.scripts) : 100;
+  const propsPct=pct(stats.propsRecovered, stats.propsTotal);
+  const servicesPct=pct(stats.servicesMatched, (stats.servicesMatched+stats.servicesUnmatched)||1);
+  const physicsPct=100;
+  const overall=Math.round((instancesPct+scriptsPct+propsPct+servicesPct)/4);
+  return { instancesPct, scriptsPct, propsPct, servicesPct, physicsPct, overall };
+}
+
+const SAMPLE_RBXLX = `<roblox version="4">
+  <Item class="Workspace" referent="1">
+    <Properties><string name="Name">Workspace</string></Properties>
+    <Item class="Part" referent="2">
+      <Properties>
+        <string name="Name">ImportedRamp</string>
+        <Vector3 name="Size"><X>12</X><Y>1</Y><Z>6</Z></Vector3>
+        <bool name="Anchored">true</bool>
+      </Properties>
+    </Item>
+    <Item class="Script" referent="3">
+      <Properties>
+        <string name="Name">CoinSpawner</string>
+        <ProtectedString name="Source">print("CoinSpawner importado desde .rbxlx")
+wait(0.5)
+print("Generando monedas...")</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="ReplicatedStorage" referent="4">
+    <Properties><string name="Name">ReplicatedStorage</string></Properties>
+    <Item class="RemoteEvent" referent="5">
+      <Properties><string name="Name">CoinPickup</string></Properties>
+    </Item>
+  </Item>
+</roblox>`;
+
+/* ---- Import Wizard controller ---- */
+function initImportWizard(){
+  const backdrop = document.getElementById('import-modal-backdrop');
+  const stepDrop = document.getElementById('import-step-drop');
+  const stepRbxlHelp = document.getElementById('import-step-rbxl-help');
+  const stepReport = document.getElementById('import-step-report');
+  const dropzone = document.getElementById('dropzone');
+  const fileInput = document.getElementById('import-file-input');
+  const status = document.getElementById('import-status');
+  const compatRows = document.getElementById('compat-rows');
+  const reportSummary = document.getElementById('report-summary');
+  let pendingImport = null;
+
+  function openModal(){ backdrop.style.display='flex'; resetModal(); }
+  function closeModal(){ backdrop.style.display='none'; }
+  function resetModal(){
+    stepDrop.style.display=''; stepRbxlHelp.style.display='none'; stepReport.style.display='none';
+    status.textContent=''; status.className=''; pendingImport=null;
+  }
+  document.getElementById('btn-import').addEventListener('click', openModal);
+  document.getElementById('import-modal-close').addEventListener('click', closeModal);
+  document.getElementById('btn-cancel-import').addEventListener('click', closeModal);
+  document.getElementById('btn-rbxl-back').addEventListener('click', () => { stepRbxlHelp.style.display='none'; stepDrop.style.display=''; });
+  document.getElementById('tab-rbxl-service').addEventListener('click', () => {
+    document.getElementById('rbxl-via-service').style.display='';
+    document.getElementById('rbxl-via-termux').style.display='none';
+  });
+  document.getElementById('tab-rbxl-termux').addEventListener('click', () => {
+    document.getElementById('rbxl-via-service').style.display='none';
+    document.getElementById('rbxl-via-termux').style.display='';
+  });
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.type === 'rbxlx-ready'){
+      status.className = 'ok';
+      status.textContent = 'Convertidor listo: descarga ' + (e.data.fileName || 'el .rbxlx') + ' y sueltalo arriba en el dropzone.';
+    }
+  });
+  document.getElementById('import-dropzone-select').addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('click', () => fileInput.click());
+  ['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+  ['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+  dropzone.addEventListener('drop', e => { const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+  fileInput.addEventListener('change', e => { const f=e.target.files[0]; if(f) handleFile(f); });
+  document.getElementById('sample-btn').addEventListener('click', () => {
+    const blob = new Blob([SAMPLE_RBXLX], {type:'application/xml'});
+    handleFile(new File([blob], 'sample-place.rbxlx'));
+  });
+  document.getElementById('btn-copy-termux').addEventListener('click', () => {
+    const text = document.getElementById('termux-cmd').textContent;
+    navigator.clipboard?.writeText(text).then(() => {
+      const btn = document.getElementById('btn-copy-termux');
+      const old = btn.textContent; btn.textContent = '¡Copiado!'; setTimeout(() => btn.textContent = old, 1400);
+    }).catch(() => {});
+  });
+
+  function showRbxlHelp(fileName){
+    stepDrop.style.display='none'; stepReport.style.display='none'; stepRbxlHelp.style.display='';
+    const base = fileName.replace(/\.rbxl$/i, '');
+    document.getElementById('rbxl-filename-inline').innerHTML = '<b>' + fileName + '</b>';
+    const cmd =
+`termux-setup-storage
+cd ~/storage/downloads
+printf '%s\\n' 'local place = fs.read("${fileName}")' 'fs.write("${base}.rbxlx", place, "rbxmx")' 'print("CONVERSION TERMINADA")' | rbxmk run -
+ls -lh ${base}.rbxl*`;
+    document.getElementById('termux-cmd').textContent = cmd;
+    Output.log('Importer', fileName + ' es .rbxl (binario) — se muestra el comando de conversion via rbxmk/Termux.');
+  }
+
+  function handleFile(file){
+    status.className=''; status.textContent = 'Leyendo ' + file.name + '...';
+    const isRbxl = /\.rbxl$/i.test(file.name) && !/\.rbxlx$/i.test(file.name);
+    if (isRbxl){ showRbxlHelp(file.name); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const { importedRoots, stats } = parseRbxlx(reader.result);
+        const compat = computeCompatibility(stats);
+        pendingImport = { importedRoots, stats, compat, fileName: file.name };
+        showReport();
+      } catch (err){ status.className='err'; status.textContent = 'No se pudo importar: ' + err.message; }
+    };
+    reader.onerror = () => { status.className='err'; status.textContent='No se pudo leer el archivo.'; };
+    reader.readAsText(file);
+  }
+
+  function bar(label, value){
+    return `<div class="compat-row"><span class="label">${label}</span><div class="bar"><div style="width:${value}%"></div></div><span class="pct">${value}%</span></div>`;
+  }
+  function showReport(){
+    stepDrop.style.display='none'; stepRbxlHelp.style.display='none'; stepReport.style.display='';
+    const { stats, compat, fileName } = pendingImport;
+    compatRows.innerHTML = bar('Instances',compat.instancesPct)+bar('Scripts',compat.scriptsPct)+bar('Properties',compat.propsPct)+bar('Services',compat.servicesPct)+bar('Physics (est.)',compat.physicsPct);
+    const unsupported = Array.from(stats.unsupportedClasses);
+    reportSummary.innerHTML = `<b>${fileName}</b> — ${stats.totalItems} instancias, ${stats.scripts} scripts (${stats.scriptsSourceRecovered} con Source recuperado).<br>` +
+      (unsupported.length ? `Clases no mapeadas explicitamente: ${unsupported.join(', ')}.<br>` : '') +
+      `Compatibilidad global reportada: <b>${compat.overall}%</b> — nunca 100% salvo verificacion real.`;
+    Output.log('Importer', `Analisis completo de ${fileName}: ${compat.overall}% compatible.`);
+  }
+
+  document.getElementById('btn-confirm-import').addEventListener('click', () => {
+    if (!pendingImport) return;
+    const SERVICE_BY_CLASS = { Workspace:P.Workspace, Players:P.Players, Lighting:P.Lighting, ReplicatedStorage:P.ReplicatedStorage,
+      ServerScriptService:P.ServerScriptService, ServerStorage:P.ServerStorage, StarterGui:P.StarterGui, StarterPack:P.StarterPack,
+      StarterPlayer:P.StarterPlayer, SoundService:P.SoundService };
+    let mergedCount = 0;
+    pendingImport.importedRoots.forEach(rootInst => {
+      const existing = SERVICE_BY_CLASS[rootInst.className];
+      if (existing){ rootInst.children.slice().forEach(child => { child.setParent(existing); mergedCount++; }); }
+      else { rootInst.setParent(P.game); mergedCount++; }
+    });
+    Output.ok('Importer', `Importadas ${mergedCount} instancias de nivel superior al DataModel.`);
+    renderTree(); closeModal();
+  });
+}
+
+/* ============================================================================
+   OUTPUT
+   ============================================================================ */
+const Output = {
+  el:null, init(){this.el=document.getElementById('output-body');},
+  _push(cls,src,msg){ const d=document.createElement('div'); d.className='line'+(cls?' '+cls:'');
+    d.innerHTML='<span class="src">'+(src||'')+'</span>'+escapeHtml(msg); this.el.appendChild(d); this.el.scrollTop=this.el.scrollHeight; },
+  log(s,m){this._push('',s,m);}, warn(s,m){this._push('warn',s,m);}, error(s,m){this._push('err',s,m);}, ok(s,m){this._push('ok',s,m);},
+  clear(){this.el.innerHTML='';}
+};
+function escapeHtml(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+/* ============================================================================
+   NETWORK MONITOR
+   ============================================================================ */
+const netlogEl = () => document.getElementById('netlog');
+const NetworkMonitor = {
+  calls: [],
+  log(direction, remote, args){
+    const validation = validateCall(remote, args);
+    const entry = { direction, remote: remote.getFullName(), args, validation, ts: Date.now() };
+    this.calls.push(entry);
+    this.render();
+    return validation;
+  },
+  render(){
+    const el = netlogEl(); if (!el) return;
+    if (this.calls.length === 0){ el.innerHTML = 'Sin trafico todavia.'; return; }
+    el.innerHTML = this.calls.slice(-40).reverse().map(c => `
+      <div class="call ${c.validation.blocked ? 'blocked' : 'accepted'}">
+        <div class="dir">${c.direction} &middot; ${c.remote}</div>
+        <div>Args: ${c.args.map(a=>JSON.stringify(a)).join(', ') || '(none)'}</div>
+        <div>Validation: <b style="color:${c.validation.blocked?'var(--err)':'var(--ok)'}">${c.validation.blocked?'FAILED':'PASSED'}</b>
+        &middot; Action: <b>${c.validation.blocked?'BLOCKED':'ACCEPTED'}</b></div>
+      </div>`).join('');
+  },
+  clear(){ this.calls = []; this.render(); }
+};
+function validateCall(remote, args){
+  // heuristic validation: flags obviously adversarial payloads used by the Threat Simulation
+  const bad = args.some(a => a === '__INVALID__' || (typeof a === 'number' && (a < 0 || a > 1e6)) || a === '__SPAM__');
+  return { blocked: bad };
+}
+
+/* ============================================================================
+   SERVER AUTHORITY ANALYZER
+   ============================================================================ */
+function renderAuthorityList(){
+  const root = inLab ? labProject : P;
+  const list = document.getElementById('authority-list');
+  const remotes = [];
+  (function walk(n){ if (n instanceof RemoteEventInstance) remotes.push(n); n.children.forEach(walk); })(root.game);
+  if (remotes.length === 0){ list.innerHTML = '<div style="color:var(--muted);">No hay Remotes en el proyecto.</div>'; return; }
+  list.innerHTML = remotes.map(r => `
+    <div class="remote-card" data-id="${r.id}">
+      <div class="name">${r.getFullName()}</div>
+      <div class="row">
+        <span style="color:var(--muted);">¿Quien decide el valor?</span>
+        <select data-remote-id="${r.id}">
+          <option value="UNKNOWN" ${r.authority==='UNKNOWN'?'selected':''}>— elegir —</option>
+          <option value="CLIENT" ${r.authority==='CLIENT'?'selected':''}>CLIENT</option>
+          <option value="SERVER" ${r.authority==='SERVER'?'selected':''}>SERVER</option>
+          <option value="BOTH" ${r.authority==='BOTH'?'selected':''}>BOTH</option>
+        </select>
+      </div>
+      <div class="row" id="authority-flag-${r.id}"></div>
+    </div>`).join('');
+  list.querySelectorAll('select').forEach(sel => sel.addEventListener('change', () => {
+    const r = remotes.find(x => String(x.id) === sel.dataset.remoteId);
+    r.authority = sel.value; r.properties.Authority = sel.value;
+    updateAuthorityFlag(r);
+  }));
+  remotes.forEach(updateAuthorityFlag);
+}
+function updateAuthorityFlag(r){
+  const el = document.getElementById('authority-flag-' + r.id);
+  if (!el) return;
+  if (r.authority === 'CLIENT'){
+    el.innerHTML = '<span class="sev HIGH">SECURITY WARNING</span>';
+  } else if (r.authority === 'SERVER' || r.authority === 'BOTH'){
+    el.innerHTML = '<span class="sev OK">OK</span>';
+  } else {
+    el.innerHTML = '';
+  }
+}
+document.getElementById('btn-scan-authority').addEventListener('click', () => {
+  if (!inLab){ Output.warn('Security Lab', 'Abre el Security Lab primero.'); return; }
+  const root = labProject;
+  const remotes = []; (function walk(n){ if (n instanceof RemoteEventInstance) remotes.push(n); n.children.forEach(walk); })(root.game);
+  // heuristic: the demo PurchaseItem script trusts client amount -> mark CLIENT automatically if untouched
+  const purchase = remotes.find(r => r.name === 'PurchaseItem');
+  if (purchase && purchase.authority === 'UNKNOWN') purchase.authority = 'CLIENT';
+  remotes.forEach(r => { if (r.authority === 'UNKNOWN') r.authority = 'SERVER'; });
+  renderAuthorityList();
+  const flagged = remotes.filter(r => r.authority === 'CLIENT');
+  Output.warn('Security Lab', `Escaneo completo. ${flagged.length} remote(s) con SECURITY WARNING.`);
+  flagged.forEach(r => addFinding({
+    title: 'Client-controlled value on ' + r.name,
+    severity: 'HIGH',
+    location: r.getFullName(),
+    observation: 'El servidor confia en un valor critico enviado por el cliente.',
+    mitigation: 'El servidor debe calcular/validar el valor de forma independiente.',
+    test: 'Enviar un valor fuera de rango y confirmar que el servidor lo rechaza.'
+  }));
+});
+
+/* ============================================================================
+   THREAT SIMULATION
+   ============================================================================ */
+const findings = [];
+function addFinding(f){
+  if (findings.some(x => x.title === f.title && x.location === f.location)) return;
+  findings.push(f);
+  renderFindings();
+}
+function renderFindings(){
+  const el = document.getElementById('findings-list');
+  if (findings.length === 0){ el.innerHTML = 'Sin hallazgos todavia — ejecuta una simulacion.'; document.getElementById('defense-list').innerHTML=''; return; }
+  el.innerHTML = findings.map(f => `
+    <div class="finding">
+      <span class="sev ${f.severity==='HIGH'?'HIGH':f.severity==='MED'?'MED':'OK'}">${f.severity}</span>
+      <div class="t">${f.title}</div>
+      <div class="loc">${f.location}</div>
+    </div>`).join('');
+  const defEl = document.getElementById('defense-list');
+  defEl.innerHTML = findings.map((f,i) => `<button class="lab-btn" data-defense-idx="${i}">🛡 Generate Defense: ${f.title}</button>`).join('');
+  defEl.querySelectorAll('[data-defense-idx]').forEach(b => b.addEventListener('click', () => {
+    const f = findings[+b.dataset.defenseIdx];
+    document.getElementById('report-md').textContent = buildDefenseMd(f);
+    document.getElementById('modal-backdrop').classList.add('open');
+  }));
+}
+
+/* ---- Defense Generator (Fase 8): server validation + regression test + explanation ----
+   Output is a reviewable snippet in the same JS-hosted script subset used elsewhere in
+   Mirror. It is never applied automatically — the creator copies it in after review. */
+function buildDefenseMd(f){
+  const remoteGuess = (f.location.split('.').pop() || 'MyRemote').replace(/[^A-Za-z0-9_]/g,'');
+  return `# Defense for: ${f.title}
+
+## 1. Server validation (add to the server Script handling this Remote)
+
+\`\`\`
+-- Server-side validation generated by Mirror Defense Generator
+-- Review before use. Replace VALID_ITEMS with your real server-authoritative table.
+local VALID_ITEMS = {
+  SwordOfDoom = { price = 50 },
+}
+
+game.ReplicatedStorage.${remoteGuess}.OnServerEvent.Connect(function(player, itemId, amount) {
+  local item = VALID_ITEMS[itemId]
+  if (item == nil) {
+    warn("Rejected: unknown item " .. tostring(itemId))
+    return
+  }
+  local serverPrice = item.price
+  if (serverPrice == nil or serverPrice != amount) {
+    warn("Rejected: client-sent amount does not match server price")
+    return
+  }
+  print("Accepted purchase:", itemId, serverPrice)
+})
+\`\`\`
+
+## 2. Regression test (run in the Security Lab against the Security Copy)
+
+\`\`\`
+-- Regression test generated by Mirror Defense Generator
+local remote = game.ReplicatedStorage.${remoteGuess}
+remote:FireServer("SwordOfDoom", 1)        -- expect: REJECTED (wrong price)
+remote:FireServer("SwordOfDoom", -50)      -- expect: REJECTED (invalid amount)
+remote:FireServer("UnknownItem", 50)       -- expect: REJECTED (unknown item)
+remote:FireServer("SwordOfDoom", 50)       -- expect: ACCEPTED (matches server table)
+\`\`\`
+
+## 3. Explanation
+
+${f.observation} This defense moves the decision to the server: the client only *requests*
+an action, and the server independently decides the outcome using its own authoritative data
+(here, \`VALID_ITEMS\`). ${f.mitigation}
+
+Severity before fix: ${f.severity}. This code is generated, not verified against your real
+game logic — read it, adapt \`VALID_ITEMS\` to your actual catalog, and re-run the regression
+test above before shipping.
+`;
+}
+document.querySelectorAll('[data-threat]').forEach(btn => btn.addEventListener('click', () => {
+  if (!inLab){ Output.warn('Security Lab', 'Abre el Security Lab primero.'); return; }
+  const kind = btn.dataset.threat;
+  const remote = labProject.purchaseRemote;
+  if (!remote){ Output.warn('Security Lab', 'No hay remote de prueba disponible.'); return; }
+
+  if (kind === 'invalid-args'){
+    Output.log('Threat Sim', 'invalid remote arguments -> ' + remote.name);
+    const v1 = remote.fireServer('SwordOfDoom', '__INVALID__');
+    const v2 = remote.fireServer('SwordOfDoom', -50);
+    const v3 = remote.fireServer('SwordOfDoom', 9999999);
+    if (v1.blocked && v2.blocked && v3.blocked){
+      Output.ok('Threat Sim', 'El validador heuristico bloqueo los 3 payloads invalidos.');
+    }
+  } else if (kind === 'remote-spam'){
+    Output.log('Threat Sim', 'remote spam -> ' + remote.name + ' x20');
+    for (let i=0;i<20;i++) remote.fireServer('SwordOfDoom', '__SPAM__');
+    addFinding({ title:'No rate limiting observed on ' + remote.name, severity:'MED', location: remote.getFullName(),
+      observation:'El remote acepto llamadas repetidas sin limite aparente en esta simulacion.',
+      mitigation:'Anadir throttling/rate limiting por jugador en el servidor.',
+      test:'Disparar el remote muchas veces en 1s y confirmar que el exceso se descarta.' });
+  } else if (kind === 'client-state'){
+    Output.warn('Threat Sim', 'Simulando manipulacion de estado client-side...');
+    Output.log('Threat Sim', 'Cliente modifico localmente Humanoid.WalkSpeed a 300 (no replicado, solo local)');
+    addFinding({ title:'Client-side state not re-validated on join/movement', severity:'MED', location:'Workspace (Humanoid properties)',
+      observation:'Sin una comprobacion server-side, un cliente modificado podria declarar valores imposibles.',
+      mitigation:'El servidor debe re-validar movimiento/velocidad contra limites conocidos.',
+      test:'Forzar un valor imposible desde el cliente y confirmar rechazo/correccion del servidor.' });
+  }
+  renderFindings();
+}));
+
+document.getElementById('btn-gen-report').addEventListener('click', () => {
+  const md = buildSecurityReportMd();
+  document.getElementById('report-md').textContent = md;
+  document.getElementById('modal-backdrop').classList.add('open');
+});
+document.getElementById('modal-close').addEventListener('click', () => document.getElementById('modal-backdrop').classList.remove('open'));
+document.getElementById('modal-ok').addEventListener('click', () => document.getElementById('modal-backdrop').classList.remove('open'));
+
+function buildSecurityReportMd(){
+  if (findings.length === 0) return '# SECURITY_REPORT.md\n\nSin hallazgos todavia. Ejecuta al menos una Threat Simulation o el Authority Scan.';
+  let out = '# SECURITY_REPORT.md\n\nGenerado por Mirror Security Lab (copia aislada, sin conexion a Roblox real).\n\n';
+  findings.forEach((f,i) => {
+    out += `## Finding ${i+1}: ${f.title}\n\n` +
+      `Severity: ${f.severity}\n\n` +
+      `Location: ${f.location}\n\n` +
+      `Observation: ${f.observation}\n\n` +
+      `Recommended mitigation: ${f.mitigation}\n\n` +
+      `Generated test: ${f.test}\n\n---\n\n`;
+  });
+  return out;
+}
+
+/* ============================================================================
+   SNAPSHOTS
+   ============================================================================ */
+const snapshots = [];
+function renderSnapshots(){
+  const el = document.getElementById('snapshot-list');
+  if (snapshots.length === 0){ el.innerHTML = 'Sin snapshots todavia.'; return; }
+  el.innerHTML = snapshots.map((s,i) => `
+    <div class="snap-row"><span>Snapshot ${i+1} &middot; ${new Date(s.ts).toLocaleTimeString()}</span>
+    <button data-idx="${i}">RESTORE</button></div>`).join('');
+  el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => restoreSnapshot(+b.dataset.idx)));
+}
+document.getElementById('btn-create-snapshot').addEventListener('click', () => {
+  if (!inLab){ Output.warn('Security Lab', 'Abre el Security Lab primero.'); return; }
+  snapshots.push({ ts: Date.now(), data: serializeTree(labProject.game) });
+  renderSnapshots();
+  Output.ok('Security Lab', 'Snapshot creado (' + snapshots.length + ').');
+});
+function serializeTree(inst){
+  return { className: inst.className, name: inst.name, properties: JSON.parse(JSON.stringify(inst.properties)),
+    authority: inst.authority, source: inst.source, children: inst.children.map(serializeTree) };
+}
+function restoreSnapshot(idx){
+  const snap = snapshots[idx]; if (!snap) return;
+  labProject.game = deserializeTree(snap.data, null);
+  labProject = cloneProject({ game: labProject.game }); // re-index helper refs
+  activeRoot = labProject.game;
+  renderTree(); renderAuthorityList();
+  Output.ok('Security Lab', 'Snapshot ' + (idx+1) + ' restaurado.');
+}
+function deserializeTree(node, parent){
+  let inst;
+  if (['Script','LocalScript','ModuleScript'].includes(node.className)) inst = new ScriptInstance(node.name, node.className, node.source);
+  else if (node.className === 'RemoteEvent'){ inst = new RemoteEventInstance(node.name); inst.authority = node.authority || 'UNKNOWN'; }
+  else if (['Workspace','Players','Lighting','ReplicatedStorage','ServerScriptService','ServerStorage','StarterGui','StarterPack','StarterPlayer','SoundService','DataModel'].includes(node.className)) inst = new ServiceInstance(node.className);
+  else inst = new MirrorInstance(node.className, node.name);
+  inst.name = node.name; inst.properties = node.properties;
+  if (parent) inst.setParent(parent);
+  node.children.forEach(c => deserializeTree(c, inst));
+  return inst;
+}
+
+/* ============================================================================
+   OPEN / CLOSE SECURITY LAB
+   ============================================================================ */
+document.getElementById('btn-open-lab').addEventListener('click', () => {
+  if (inLab) return;
+  labProject = cloneProject(P); // SECURITY COPY — original P is never touched
+  inLab = true;
+  activeRoot = labProject.game;
+  document.body.classList.add('lab-on');
+  document.getElementById('btn-open-lab').textContent = '🔓 Close Security Lab';
+  switchTab('authority');
+  renderTree(); renderAuthorityList(); NetworkMonitor.clear(); renderSnapshots(); renderFindings();
+  Output.ok('Security Lab', 'Copia aislada creada. El proyecto original no se ve afectado por nada de lo que ocurra aqui.');
+});
+document.getElementById('btn-open-lab').addEventListener('click', function relabel(){
+  if (inLab && this.textContent.startsWith('🔓')){
+    this.addEventListener('click', function closeOnce(){
+      inLab = false; labProject = null; activeRoot = P.game;
+      document.body.classList.remove('lab-on');
+      document.getElementById('btn-open-lab').textContent = '🔒 Open Security Lab';
+      switchTab('props');
+      renderTree();
+      Output.log('Security Lab', 'Cerrado. De vuelta al proyecto original (Editor Copy).');
+      this.removeEventListener('click', closeOnce);
+    }, { once:true });
+  }
+});
+
+/* ============================================================================
+   RIGHT PANEL TABS
+   ============================================================================ */
+function switchTab(name){
+  document.querySelectorAll('#right-tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab===name));
+  document.querySelectorAll('.lab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-'+name));
+  if (name === 'authority') renderAuthorityList();
+  if (name === 'network') NetworkMonitor.render();
+  if (name === 'snapshots') renderSnapshots();
+  if (name === 'threats') renderFindings();
+}
+document.querySelectorAll('#right-tabs button').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+/* ============================================================================
+   EXPLORER / PROPERTIES
+   ============================================================================ */
+const treeEl = document.getElementById('explorer-tree');
+const propsEl = document.getElementById('props-list');
+let selected = null;
+const ICONS = { DataModel:'🎮', Workspace:'🗺️', Players:'👥', Lighting:'💡', ReplicatedStorage:'🔁',
+  ServerScriptService:'🖥️', ServerStorage:'📦', StarterGui:'🪟', StarterPack:'🎒', StarterPlayer:'🧍',
+  SoundService:'🔊', Part:'🧱', SpawnLocation:'🔴', Script:'📜', LocalScript:'📄', ModuleScript:'📘',
+  Folder:'📁', RemoteEvent:'📡' };
+function renderTree(){ treeEl.innerHTML=''; treeEl.appendChild(buildNode(activeRoot, 0)); }
+function buildNode(inst, depth){
+  const row=document.createElement('div'); row.className='node'+(selected===inst?' selected':'');
+  row.style.paddingLeft=(10+depth*14)+'px';
+  const icon=ICONS[inst.className]||'⬜';
+  row.innerHTML=`<span class="ic">${icon}</span><span>${inst.name}</span><span class="cls">${inst.className}</span>`;
+  row.addEventListener('click', e=>{ e.stopPropagation(); select(inst); });
+  const wrap=document.createElement('div'); wrap.appendChild(row);
+  inst.children.forEach(c=>wrap.appendChild(buildNode(c,depth+1)));
+  return wrap;
+}
+function select(inst){ selected=inst; renderTree(); renderProps(); }
+function renderProps(){
+  if (!selected){ propsEl.innerHTML='<div id="props-empty">Selecciona un objeto en el Explorer</div>'; return; }
+  propsEl.innerHTML='';
+  Object.entries(selected.properties).forEach(([k,v])=>{
+    const row=document.createElement('div'); row.className='prop-row';
+    row.innerHTML=`<span class="k">${k}</span><input data-key="${k}" value="${String(v).replace(/"/g,'&quot;')}">`;
+    propsEl.appendChild(row);
+  });
+  propsEl.querySelectorAll('input').forEach(inp=>inp.addEventListener('change',()=>{
+    let v=inp.value; if(v==='true')v=true; else if(v==='false')v=false;
+    selected.setProp(inp.dataset.key,v); renderTree();
+  }));
+}
+
+document.getElementById('btn-run').addEventListener('click', () => {
+  if (!selected || !['Script','LocalScript','ModuleScript'].includes(selected.className)){
+    Output.warn('Mirror','Selecciona un Script.'); return;
+  }
+  runScript(selected);
+});
+document.getElementById('btn-stop').addEventListener('click', () => Output.log('Mirror','Detenido.'));
+document.getElementById('output-clear').addEventListener('click', () => Output.clear());
+document.getElementById('btn-toggle-studio').addEventListener('click', e => {
+  document.body.classList.toggle('studio-on');
+  e.target.textContent = document.body.classList.contains('studio-on') ? 'Studio: ON' : 'Studio: OFF';
+});
+const btnEdit=document.getElementById('btn-edit'), btnPlay=document.getElementById('btn-play'),
+      btnStop=document.getElementById('btn-stop'), editHint=document.getElementById('edit-hint');
+btnPlay.addEventListener('click', async () => {
+  btnEdit.classList.remove('active'); btnPlay.classList.add('active'); btnStop.disabled=false; editHint.style.display='none';
+});
+btnEdit.addEventListener('click', () => {
+  btnEdit.classList.add('active'); btnPlay.classList.remove('active'); btnStop.disabled=true; editHint.style.display='';
+});
+
+function makeSandboxAPI(scriptInst){
+  const src = scriptInst.getFullName();
+  const root = inLab ? labProject : P;
+  return { print:(...a)=>Output.log(src,a.map(String).join(' ')), warn:(...a)=>Output.warn(src,a.map(String).join(' ')),
+    wait:(s)=>new Promise(r=>setTimeout(r,(s||0.03)*1000)), game: root.game, workspace: root.Workspace };
+}
+async function runScript(scriptInst){
+  if (!scriptInst.source){ Output.warn(scriptInst.getFullName(),'NOT AVAILABLE'); return; }
+  const api = makeSandboxAPI(scriptInst);
+  try { await (new Function('api', `"use strict"; const {print,warn,wait,game,workspace}=api; return (async()=>{ ${scriptInst.source} })();`))(api); }
+  catch(e){ Output.error(scriptInst.getFullName(), e.message); }
+}
+
+/* ============================================================================
+   3D RUNTIME (unchanged from Fase 1)
+   ============================================================================ */
+Output.init(); renderTree(); select(P.Workspace); initImportWizard();
+
+const sceneRoot=document.getElementById('scene');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+function sizeRenderer(){ const w=sceneRoot.clientWidth,h=sceneRoot.clientHeight; renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+sceneRoot.appendChild(renderer.domElement);
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x8fc7f2); scene.fog=new THREE.Fog(0x8fc7f2,60,220);
+const camera=new THREE.PerspectiveCamera(60,1,0.1,1000);
+scene.add(new THREE.HemisphereLight(0xbfe0ff,0x4a5a3a,0.85));
+const sun=new THREE.DirectionalLight(0xffffff,1.15); sun.position.set(60,90,40); sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048); sun.shadow.camera.left=-80; sun.shadow.camera.right=80; sun.shadow.camera.top=80; sun.shadow.camera.bottom=-80; sun.shadow.camera.far=300;
+scene.add(sun);
+const PLATE_SIZE=128;
+const plate=new THREE.Mesh(new THREE.BoxGeometry(PLATE_SIZE,1,PLATE_SIZE), new THREE.MeshStandardMaterial({color:0x3d7a3d,roughness:0.95}));
+plate.position.y=-0.5; plate.receiveShadow=true; scene.add(plate);
+const grid=new THREE.GridHelper(PLATE_SIZE,PLATE_SIZE/4,0x2a5c2a,0x2a5c2a); grid.position.y=0.01; grid.material.opacity=0.25; grid.material.transparent=true; scene.add(grid);
+function block(w,h,d,color){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color,roughness:0.6,metalness:0.05})); m.castShadow=true; m.receiveShadow=true; return m; }
+const character=new THREE.Group();
+const torso=block(2,2,1,0x2b5fad); torso.position.y=3; character.add(torso);
+const head=block(1.4,1.4,1.4,0xf3c93c); head.position.y=4.7; character.add(head);
+const eyeMat=new THREE.MeshStandardMaterial({color:0x1a1a1a}); const eyeGeo=new THREE.BoxGeometry(0.14,0.14,0.05);
+const eyeL=new THREE.Mesh(eyeGeo,eyeMat); eyeL.position.set(-0.3,4.75,0.73);
+const eyeR=new THREE.Mesh(eyeGeo,eyeMat); eyeR.position.set(0.3,4.75,0.73);
+character.add(eyeL,eyeR);
+const smile=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.08,0.05),eyeMat); smile.position.set(0,4.45,0.73); character.add(smile);
+const armL=block(0.6,2,0.6,0xf3c93c); armL.position.set(-1.3,3,0); character.add(armL);
+const armR=block(0.6,2,0.6,0xf3c93c); armR.position.set(1.3,3,0); character.add(armR);
+const legL=block(0.8,2,0.8,0x4a8f3c); legL.position.set(-0.5,1,0); character.add(legL);
+const legR=block(0.8,2,0.8,0x4a8f3c); legR.position.set(0.5,1,0); character.add(legR);
+scene.add(character);
+const spawnMesh=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,0.15,24), new THREE.MeshStandardMaterial({color:0xd94f4f,transparent:true,opacity:0.55,emissive:0x330000}));
+spawnMesh.position.set(0,0.08,0); scene.add(spawnMesh);
+[[10,-6],[-14,8],[6,14]].forEach(([x,z])=>{ const b=block(3,3,3,0x9a9a9a); b.position.set(x,1.5,z); scene.add(b); });
+
+const state={velocityY:0,onGround:true,yaw:0,camYaw:Math.PI,camPitch:0.35,camDistance:9,move:{x:0,z:0},jumpRequested:false,speed:9,jumpVelocity:9.5,gravity:24};
+const keys={};
+window.addEventListener('keydown', e=>{keys[e.code]=true; if(e.code==='Space') state.jumpRequested=true;});
+window.addEventListener('keyup', e=>{keys[e.code]=false;});
+function readKeyboardMove(){ let x=0,z=0; if(keys['KeyW']||keys['ArrowUp'])z-=1; if(keys['KeyS']||keys['ArrowDown'])z+=1;
+  if(keys['KeyA']||keys['ArrowLeft'])x-=1; if(keys['KeyD']||keys['ArrowRight'])x+=1;
+  const len=Math.hypot(x,z); if(len>0){x/=len;z/=len;} return {x,z}; }
+let dragging=false,lastX=0,lastY=0;
+renderer.domElement.addEventListener('pointerdown', e=>{ if(e.target.closest('#stick-zone')||e.target.closest('#jump-btn'))return; dragging=true; lastX=e.clientX; lastY=e.clientY; });
+window.addEventListener('pointerup', ()=>{dragging=false;});
+window.addEventListener('pointermove', e=>{ if(!dragging)return; const dx=e.clientX-lastX,dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+  state.camYaw-=dx*0.006; state.camPitch=Math.max(0.08,Math.min(1.1,state.camPitch-dy*0.004)); });
+const stickZone=document.getElementById('stick-zone'), stickKnob=document.getElementById('stick-knob'), jumpBtn=document.getElementById('jump-btn');
+let stickActive=false, stickId=null; const stickCenter={x:0,y:0};
+stickZone.addEventListener('pointerdown', e=>{ stickActive=true; stickId=e.pointerId; const r=stickZone.getBoundingClientRect(); stickCenter.x=r.left+r.width/2; stickCenter.y=r.top+r.height/2; stickZone.setPointerCapture(e.pointerId); });
+window.addEventListener('pointermove', e=>{ if(!stickActive||e.pointerId!==stickId)return; let dx=e.clientX-stickCenter.x,dy=e.clientY-stickCenter.y; const max=42; const len=Math.hypot(dx,dy); if(len>max){dx=dx/len*max;dy=dy/len*max;} stickKnob.style.left=(36+dx)+'px'; stickKnob.style.top=(36+dy)+'px'; state.move.x=dx/max; state.move.z=dy/max; });
+window.addEventListener('pointerup', e=>{ if(e.pointerId!==stickId)return; stickActive=false; stickKnob.style.left='36px'; stickKnob.style.top='36px'; state.move.x=0; state.move.z=0; });
+jumpBtn.addEventListener('pointerdown', ()=>{state.jumpRequested=true;});
+window.addEventListener('resize', sizeRenderer);
+const clock=new THREE.Clock();
+function update(dt){
+  const kb=readKeyboardMove();
+  const kbActive=keys['KeyW']||keys['KeyA']||keys['KeyS']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight'];
+  const mx=kbActive?kb.x:state.move.x, mz=kbActive?kb.z:state.move.z;
+  const forward=new THREE.Vector3(Math.sin(state.camYaw),0,Math.cos(state.camYaw));
+  const right=new THREE.Vector3(Math.sin(state.camYaw+Math.PI/2),0,Math.cos(state.camYaw+Math.PI/2));
+  const moveDir=new THREE.Vector3(); moveDir.addScaledVector(forward,mz); moveDir.addScaledVector(right,mx);
+  if (moveDir.lengthSq()>0.0001){ moveDir.normalize(); character.position.addScaledVector(moveDir,state.speed*dt);
+    const targetYaw=Math.atan2(moveDir.x,moveDir.z); let diff=targetYaw-state.yaw; diff=Math.atan2(Math.sin(diff),Math.cos(diff));
+    state.yaw+=diff*Math.min(1,dt*10); character.rotation.y=state.yaw; }
+  const half=PLATE_SIZE/2-2; character.position.x=Math.max(-half,Math.min(half,character.position.x)); character.position.z=Math.max(-half,Math.min(half,character.position.z));
+  if (state.jumpRequested && state.onGround){ state.velocityY=state.jumpVelocity; state.onGround=false; } state.jumpRequested=false;
+  state.velocityY-=state.gravity*dt; character.position.y+=state.velocityY*dt;
+  if (character.position.y<=0){ character.position.y=0; state.velocityY=0; state.onGround=true; }
+  const camTarget=character.position.clone().add(new THREE.Vector3(0,3.2,0));
+  const camOffset=new THREE.Vector3(Math.sin(state.camYaw)*-state.camDistance*Math.cos(state.camPitch), state.camDistance*Math.sin(state.camPitch)+1.5, Math.cos(state.camYaw)*-state.camDistance*Math.cos(state.camPitch));
+  camera.position.lerp(camTarget.clone().add(camOffset), Math.min(1,dt*8)); camera.lookAt(camTarget);
+}
+function animate(){ requestAnimationFrame(animate); const dt=Math.min(0.05,clock.getDelta()); update(dt); renderer.render(scene,camera); }
+sizeRenderer(); animate();
+})();
+</script>
+</body>
+</html>

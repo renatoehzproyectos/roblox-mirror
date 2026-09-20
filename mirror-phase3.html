@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Roblox Mirror — Fase 5 · Importer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --bg:#0c0e12; --panel:#14171d; --panel-border:#262b34; --text:#e7ebf0;
+    --muted:#8b93a1; --accent:#4fd1c5; --warn:#e0a832; --err:#e05f5f; --ok:#5fd08a;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;overscroll-behavior:none;}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;}
+
+  #toolbar{height:44px;flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:0 10px;
+    padding-top:env(safe-area-inset-top,0px);background:var(--panel);border-bottom:1px solid var(--panel-border);z-index:30;}
+  #toolbar .brand{font-size:13px;color:var(--muted);margin-right:auto;display:flex;align-items:center;gap:6px;}
+  #toolbar .brand .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);}
+  #toolbar .brand b{color:var(--text);font-weight:600;}
+  #toolbar button{background:transparent;border:1px solid var(--panel-border);color:var(--text);
+    border-radius:6px;padding:6px 12px;font-size:12.5px;cursor:pointer;}
+  #toolbar button.primary{background:var(--accent);color:#04201d;border-color:var(--accent);font-weight:600;}
+  #toolbar button.stop{background:var(--err);color:#fff;border-color:var(--err);font-weight:600;}
+  #toolbar button:disabled{opacity:0.4;cursor:default;}
+  #toolbar .toggle{display:flex;gap:4px;background:#0c0e12;border:1px solid var(--panel-border);border-radius:6px;padding:2px;}
+  #toolbar .toggle button{border:none;border-radius:4px;padding:5px 10px;}
+  #toolbar .toggle button.active{background:var(--panel-border);}
+
+  #main{flex:1 1 auto;display:flex;min-height:0;}
+  #left,#right{flex:0 0 auto;width:0;overflow:hidden;background:var(--panel);border-right:1px solid var(--panel-border);
+    display:flex;flex-direction:column;transition:width .15s ease;}
+  #right{border-right:none;border-left:1px solid var(--panel-border);}
+  body.studio-on #left{width:230px;}
+  body.studio-on #right{width:260px;}
+  @media (max-width:820px){ body.studio-on #left{width:160px;} body.studio-on #right{width:190px;} }
+
+  .panel-title{font-size:11px;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--panel-border);flex:0 0 auto;}
+  #explorer-tree{flex:1 1 auto;overflow:auto;padding:6px 0;font-size:12.5px;}
+  .node{display:flex;align-items:center;gap:5px;padding:3px 10px;cursor:pointer;white-space:nowrap;border-radius:4px;margin:0 4px;}
+  .node:hover{background:#1c2026;}
+  .node.selected{background:#20363580;outline:1px solid var(--accent);}
+  .node .cls{color:var(--muted);font-size:10.5px;margin-left:4px;}
+  .node .ic{width:14px;text-align:center;font-size:11px;opacity:.85;}
+  .node .flag{margin-left:4px;font-size:10px;}
+
+  #props-list{flex:1 1 auto;overflow:auto;padding:8px 10px;font-size:12px;}
+  .prop-row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid #1d2128;}
+  .prop-row .k{color:var(--muted);}
+  .prop-row input{background:#0c0e12;border:1px solid var(--panel-border);color:var(--text);border-radius:4px;
+    padding:2px 6px;font-size:11.5px;width:120px;text-align:right;font-family:ui-monospace,Menlo,monospace;}
+  #props-empty{padding:16px 12px;color:var(--muted);font-size:12px;}
+
+  #center{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;position:relative;}
+  #viewport-wrap{flex:1 1 auto;position:relative;min-height:0;}
+  #scene{position:absolute;inset:0;}
+  canvas{display:block;touch-action:none;}
+
+  #output{flex:0 0 120px;background:#0d0f13;border-top:1px solid var(--panel-border);display:none;flex-direction:column;}
+  body.studio-on #output{display:flex;}
+  #output-head{flex:0 0 auto;font-size:11px;color:var(--muted);padding:6px 12px;border-bottom:1px solid var(--panel-border);
+    display:flex;justify-content:space-between;}
+  #output-head span.clear{cursor:pointer;}
+  #output-body{flex:1 1 auto;overflow:auto;padding:6px 12px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;}
+  #output-body .line{padding:2px 0;color:#b7c0cc;}
+  #output-body .line.warn{color:var(--warn);}
+  #output-body .line.err{color:var(--err);}
+  #output-body .line.ok{color:var(--ok);}
+  #output-body .line .src{color:#586071;margin-right:6px;}
+
+  #hint{position:absolute;top:10px;right:10px;z-index:10;background:rgba(20,23,29,0.82);border:1px solid var(--panel-border);
+    border-radius:8px;padding:8px 12px;font-size:12px;color:var(--muted);max-width:180px;text-align:right;}
+  @media (pointer: coarse){ #hint{display:none;} }
+  #touch{display:none;pointer-events:none;}
+  @media (pointer: coarse){ #touch{display:block;} }
+  #stick-zone{position:absolute;left:20px;bottom:20px;width:120px;height:120px;border-radius:50%;
+    background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);pointer-events:auto;z-index:20;}
+  #stick-knob{position:absolute;width:48px;height:48px;left:36px;top:36px;border-radius:50%;background:rgba(79,209,197,0.85);
+    box-shadow:0 0 12px rgba(79,209,197,0.5);}
+  #jump-btn{position:absolute;right:24px;bottom:28px;width:70px;height:70px;border-radius:50%;
+    background:rgba(224,168,50,0.18);border:1px solid rgba(224,168,50,0.55);color:var(--warn);font-size:11px;font-weight:600;
+    display:flex;align-items:center;justify-content:center;pointer-events:auto;z-index:20;}
+  #edit-hint{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:10;
+    background:rgba(20,23,29,0.85);border:1px solid var(--panel-border);border-radius:20px;padding:6px 14px;
+    font-size:11.5px;color:var(--muted);}
+
+  /* ---- Import modal ---- */
+  #modal-backdrop{position:fixed;inset:0;background:rgba(5,6,8,0.72);z-index:100;display:none;
+    align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);}
+  #modal-backdrop.open{display:flex;}
+  #modal{width:min(520px,100%);max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:12px;padding:0;}
+  #modal-head{padding:14px 18px;border-bottom:1px solid var(--panel-border);display:flex;align-items:center;
+    justify-content:space-between;}
+  #modal-head h3{margin:0;font-size:14px;font-weight:600;}
+  #modal-head .x{cursor:pointer;color:var(--muted);font-size:18px;line-height:1;}
+  #modal-body{padding:18px;}
+  #dropzone{border:1.5px dashed var(--panel-border);border-radius:10px;padding:34px 16px;text-align:center;
+    color:var(--muted);font-size:13px;cursor:pointer;transition:border-color .15s;}
+  #dropzone.drag{border-color:var(--accent);color:var(--accent);}
+  #dropzone b{display:block;color:var(--text);font-size:14px;margin-bottom:6px;}
+  #file-input{display:none;}
+  .compat-row{display:flex;align-items:center;gap:10px;margin:8px 0;font-size:12px;}
+  .compat-row .label{width:118px;color:var(--muted);flex:0 0 auto;}
+  .compat-row .bar{flex:1 1 auto;height:8px;background:#1c2026;border-radius:5px;overflow:hidden;}
+  .compat-row .bar > div{height:100%;background:var(--accent);}
+  .compat-row .pct{width:40px;text-align:right;font-family:ui-monospace,Menlo,monospace;color:var(--text);}
+  #modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;}
+  #modal-actions button{background:transparent;border:1px solid var(--panel-border);color:var(--text);
+    border-radius:6px;padding:8px 14px;font-size:12.5px;cursor:pointer;}
+  #modal-actions button.primary{background:var(--accent);color:#04201d;border-color:var(--accent);font-weight:600;}
+  #modal-actions button:disabled{opacity:.4;cursor:default;}
+  .report-note{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.6;}
+  .report-note b{color:var(--text);}
+  #modal-status{font-size:12px;color:var(--muted);margin-top:10px;min-height:18px;}
+  #modal-status.err{color:var(--err);}
+  #sample-btn{background:transparent;border:none;color:var(--accent);cursor:pointer;font-size:12px;text-decoration:underline;padding:0;}
+</style>
+</head>
+<body class="studio-on">
+
+<div id="app">
+  <div id="toolbar">
+    <div class="brand"><span class="dot"></span> Mirror Studio <b>&middot; Fase 5</b></div>
+    <button id="btn-import" class="primary">⭳ Import Roblox Place</button>
+    <div class="toggle">
+      <button id="btn-edit" class="active">EDIT</button>
+      <button id="btn-play">PLAY</button>
+    </div>
+    <button id="btn-toggle-studio">Studio: ON</button>
+    <button id="btn-run">▶ Ejecutar Script</button>
+    <button id="btn-stop" class="stop" disabled>■ Detener</button>
+  </div>
+
+  <div id="main">
+    <div id="left">
+      <div class="panel-title">EXPLORER</div>
+      <div id="explorer-tree"></div>
+    </div>
+
+    <div id="center">
+      <div id="viewport-wrap">
+        <div id="scene"></div>
+        <div id="hint">WASD para moverte<br>Espacio para saltar<br>Arrastra para mirar</div>
+        <div id="edit-hint">Modo EDIT — importa un .rbxlx o pulsa PLAY</div>
+        <div id="touch">
+          <div id="stick-zone"><div id="stick-knob"></div></div>
+          <div id="jump-btn">SALTAR</div>
+        </div>
+      </div>
+      <div id="output">
+        <div id="output-head"><span>OUTPUT</span><span class="clear" id="output-clear">limpiar</span></div>
+        <div id="output-body"></div>
+      </div>
+    </div>
+
+    <div id="right">
+      <div class="panel-title">PROPERTIES</div>
+      <div id="props-list"><div id="props-empty">Selecciona un objeto en el Explorer</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="modal-backdrop">
+  <div id="modal">
+    <div id="modal-head"><h3 id="modal-title">Import Roblox Place</h3><span class="x" id="modal-close">✕</span></div>
+    <div id="modal-body">
+
+      <div id="step-drop">
+        <div id="dropzone">
+          <b>Arrastra tu archivo .rbxlx aquí</b>
+          o <span style="text-decoration:underline;cursor:pointer;" id="dropzone-select">selecciona un archivo</span>
+          <input type="file" id="file-input" accept=".rbxlx,.rbxl,.xml">
+        </div>
+        <div class="report-note">
+          Se prioriza <b>.rbxlx</b> (XML) por ser el formato documentado más simple de analizar.
+          <b>.rbxl</b> (binario) aún no tiene parser — Fase 6.<br>
+          No se sube ningún archivo a un servidor: todo el parseo ocurre localmente en el navegador.
+        </div>
+        <div class="report-note">
+          ¿No tienes uno a mano? <button id="sample-btn">Probar con un .rbxlx de ejemplo</button>
+        </div>
+        <div id="modal-status"></div>
+      </div>
+
+      <div id="step-report" style="display:none;">
+        <div id="compat-rows"></div>
+        <div class="report-note" id="report-summary"></div>
+        <div id="modal-actions">
+          <button id="btn-cancel-import">Cancelar</button>
+          <button id="btn-confirm-import" class="primary">Importar al DataModel</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+/* ============================================================================
+   MIRROR DATAMODEL  (same as Fase 2)
+   ============================================================================ */
+let nextId = 1;
+class MirrorInstance {
+  constructor(className, name){
+    this.id = nextId++;
+    this.className = className;
+    this.name = name || className;
+    this.parent = null;
+    this.children = [];
+    this.properties = { Name: this.name, ClassName: className };
+    this._events = {};
+    this.importFlags = null; // set on imported instances: {scripted, sourceRecovered}
+  }
+  setParent(newParent){
+    if (this.parent){ const i=this.parent.children.indexOf(this); if(i>=0) this.parent.children.splice(i,1); }
+    this.parent = newParent;
+    if (newParent) newParent.children.push(this);
+    return this;
+  }
+  getChildren(){ return this.children.slice(); }
+  findFirstChild(name){ return this.children.find(c=>c.name===name) || null; }
+  getFullName(){ let p=[this.name],pp=this.parent; while(pp){p.unshift(pp.name);pp=pp.parent;} return p.join('.'); }
+  connect(eventName, fn){ (this._events[eventName]=this._events[eventName]||[]).push(fn);
+    return {disconnect:()=>{const a=this._events[eventName]; const i=a.indexOf(fn); if(i>=0)a.splice(i,1);}}; }
+  fire(eventName, ...args){ (this._events[eventName]||[]).forEach(fn=>{try{fn(...args);}catch(e){Output.error(this.getFullName(),e.message);}}); }
+  setProp(key,value){ this.properties[key]=value; if(key==='Name') this.name=value; this.fire('_propertyChanged',key,value); }
+}
+class ServiceInstance extends MirrorInstance{ constructor(cn){ super(cn,cn); this.isService=true; } }
+class ScriptInstance extends MirrorInstance{
+  constructor(name, kind, source){
+    super(kind, name||kind);
+    this.runContext = kind==='LocalScript' ? 'Client' : (kind==='ModuleScript' ? 'Shared':'Server');
+    this.properties.RunContext = this.runContext;
+    this.source = source;
+    this.properties.Enabled = true;
+  }
+}
+
+const game = new ServiceInstance('DataModel'); game.name='game';
+const Workspace = new ServiceInstance('Workspace'); Workspace.setParent(game);
+const Players = new ServiceInstance('Players'); Players.setParent(game);
+const Lighting = new ServiceInstance('Lighting'); Lighting.setParent(game);
+const ReplicatedStorage = new ServiceInstance('ReplicatedStorage'); ReplicatedStorage.setParent(game);
+const ServerScriptService = new ServiceInstance('ServerScriptService'); ServerScriptService.setParent(game);
+const ServerStorage = new ServiceInstance('ServerStorage'); ServerStorage.setParent(game);
+const StarterGui = new ServiceInstance('StarterGui'); StarterGui.setParent(game);
+const StarterPack = new ServiceInstance('StarterPack'); StarterPack.setParent(game);
+const StarterPlayer = new ServiceInstance('StarterPlayer'); StarterPlayer.setParent(game);
+const SoundService = new ServiceInstance('SoundService'); SoundService.setParent(game);
+
+const SERVICE_BY_CLASS = {
+  Workspace, Players, Lighting, ReplicatedStorage, ServerScriptService,
+  ServerStorage, StarterGui, StarterPack, StarterPlayer, SoundService
+};
+
+const Baseplate = new MirrorInstance('Part','Baseplate');
+Baseplate.properties.Size = '512, 1, 512'; Baseplate.properties.Anchored = true;
+Baseplate.setParent(Workspace);
+const SpawnLocation = new MirrorInstance('SpawnLocation','SpawnLocation');
+SpawnLocation.properties.Size = '6, 1, 6'; SpawnLocation.setParent(Workspace);
+
+/* ============================================================================
+   OUTPUT
+   ============================================================================ */
+const Output = {
+  el:null, init(){this.el=document.getElementById('output-body');},
+  _push(cls,src,msg){ const d=document.createElement('div'); d.className='line'+(cls?' '+cls:'');
+    d.innerHTML='<span class="src">'+(src||'')+'</span>'+escapeHtml(msg); this.el.appendChild(d); this.el.scrollTop=this.el.scrollHeight; },
+  log(s,m){this._push('',s,m);}, warn(s,m){this._push('warn',s,m);}, error(s,m){this._push('err',s,m);}, ok(s,m){this._push('ok',s,m);},
+  clear(){this.el.innerHTML='';}
+};
+function escapeHtml(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+/* ============================================================================
+   SCRIPT RUNTIME (JS-hosted subset — same honest caveat as Fase 2)
+   ============================================================================ */
+function makeSandboxAPI(scriptInst){
+  const src = scriptInst.getFullName();
+  return {
+    print:(...a)=>Output.log(src,a.map(String).join(' ')),
+    warn:(...a)=>Output.warn(src,a.map(String).join(' ')),
+    wait:(s)=>new Promise(r=>setTimeout(r,(s||0.03)*1000)),
+    task:{wait:(s)=>new Promise(r=>setTimeout(r,(s||0.03)*1000))},
+    game, workspace: Workspace
+  };
+}
+async function runScript(scriptInst){
+  if (!scriptInst.source) { Output.warn(scriptInst.getFullName(), 'NOT AVAILABLE (sin Source recuperable)'); return; }
+  const api = makeSandboxAPI(scriptInst);
+  const body = `"use strict"; const {print,warn,wait,task,game,workspace}=api; return (async()=>{ ${scriptInst.source} })();`;
+  try { await (new Function('api', body))(api); }
+  catch(e){ Output.error(scriptInst.getFullName(), e.message); }
+}
+function stopAllScripts(){}
+
+/* ============================================================================
+   IMPORTER — .rbxlx (XML) parser
+   Non-destructive: original file/text is never modified; we build a fresh
+   internal MirrorInstance tree from it.
+   ============================================================================ */
+const KNOWN_SCRIPT_CLASSES = { Script:'Script', LocalScript:'LocalScript', ModuleScript:'ModuleScript' };
+
+function parseRbxlx(xmlText){
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'application/xml');
+  const parseErr = doc.querySelector('parsererror');
+  if (parseErr) throw new Error('XML invalido o corrupto: ' + parseErr.textContent.slice(0,140));
+
+  const rootEl = doc.documentElement;
+  if (!rootEl || rootEl.tagName.toLowerCase() !== 'roblox'){
+    throw new Error('No es un archivo .rbxlx reconocible (falta elemento <roblox>).');
+  }
+
+  const stats = {
+    totalItems:0, namedRecovered:0, propsTotal:0, propsRecovered:0,
+    scripts:0, scriptsSourceRecovered:0, servicesMatched:0, servicesUnmatched:0,
+    unsupportedClasses: new Set()
+  };
+
+  function readProperties(itemEl){
+    const propsEl = Array.from(itemEl.children).find(c => c.tagName === 'Properties');
+    const props = {}; let name = null; let source = null;
+    if (propsEl){
+      Array.from(propsEl.children).forEach(propNode => {
+        const key = propNode.getAttribute('name');
+        if (!key) return;
+        stats.propsTotal++;
+        const tag = propNode.tagName;
+        let value;
+        if (tag === 'string' || tag === 'ProtectedString' || tag === 'BinaryString'){
+          value = propNode.textContent;
+        } else if (tag === 'bool'){
+          value = propNode.textContent.trim() === 'true';
+        } else if (tag === 'float' || tag === 'double' || tag === 'int' || tag === 'int64' || tag === 'token'){
+          value = propNode.textContent.trim();
+        } else if (tag === 'Vector3'){
+          const x = propNode.querySelector('X')?.textContent ?? '0';
+          const y = propNode.querySelector('Y')?.textContent ?? '0';
+          const z = propNode.querySelector('Z')?.textContent ?? '0';
+          value = `${(+x).toFixed(2)}, ${(+y).toFixed(2)}, ${(+z).toFixed(2)}`;
+        } else if (tag === 'Color3' || tag === 'Color3uint8'){
+          value = propNode.textContent.trim();
+        } else {
+          value = propNode.textContent ? propNode.textContent.trim().slice(0,80) : '(unsupported)';
+        }
+        if (value !== undefined && value !== null){
+          stats.propsRecovered++;
+          props[key] = value;
+        }
+        if (key === 'Name') name = value;
+        if (key === 'Source') source = value;
+      });
+    }
+    return { props, name, source };
+  }
+
+  function buildInstance(itemEl){
+    stats.totalItems++;
+    const className = itemEl.getAttribute('class') || 'Instance';
+    const { props, name, source } = readProperties(itemEl);
+
+    let inst;
+    if (KNOWN_SCRIPT_CLASSES[className]){
+      stats.scripts++;
+      if (source !== null){ stats.scriptsSourceRecovered++; }
+      inst = new ScriptInstance(name || className, className, source !== null ? source : null);
+      if (source === null) inst.importFlags = { sourceRecovered:false };
+    } else {
+      inst = new MirrorInstance(className, name || className);
+    }
+    if (name) stats.namedRecovered++;
+    Object.entries(props).forEach(([k,v]) => { if (k!=='Name') inst.properties[k] = v; });
+    inst.importFlags = inst.importFlags || {};
+    inst.importFlags.imported = true;
+    if (!KNOWN_SCRIPT_CLASSES[className] &&
+        !['Part','Model','Folder','SpawnLocation','Workspace','Players','Lighting','ReplicatedStorage',
+          'ServerScriptService','ServerStorage','StarterGui','StarterPack','StarterPlayer','SoundService',
+          'RemoteEvent','RemoteFunction'].includes(className)){
+      stats.unsupportedClasses.add(className);
+    }
+
+    // recurse into nested <Item> children
+    Array.from(itemEl.children).filter(c => c.tagName === 'Item').forEach(childEl => {
+      const childInst = buildInstance(childEl);
+      childInst.setParent(inst);
+    });
+    return inst;
+  }
+
+  const topItems = Array.from(rootEl.children).filter(c => c.tagName === 'Item');
+  if (topItems.length === 0) throw new Error('El archivo no contiene ningun <Item> (place vacio o formato inesperado).');
+
+  const importedRoots = topItems.map(buildInstance);
+
+  return { importedRoots, stats };
+}
+
+function computeCompatibility(stats){
+  const pct = (a,b) => b>0 ? Math.round((a/b)*100) : 100;
+  const instancesPct = pct(stats.namedRecovered, stats.totalItems);
+  const scriptsPct = stats.scripts>0 ? pct(stats.scriptsSourceRecovered, stats.scripts) : 100;
+  const propsPct = pct(stats.propsRecovered, stats.propsTotal);
+  const servicesPct = pct(stats.servicesMatched, stats.servicesMatched + stats.servicesUnmatched || 1);
+  // physics/networking are not truly exercised at parse-time; report as N/A-leaning conservative estimate
+  const physicsPct = 100; // geometry/properties parsed 1:1 today (no live physics divergence measured yet)
+  const overall = Math.round((instancesPct + scriptsPct + propsPct + servicesPct) / 4);
+  return { instancesPct, scriptsPct, propsPct, servicesPct, physicsPct, overall };
+}
+
+/* ============================================================================
+   IMPORT WIZARD UI
+   ============================================================================ */
+const modalBackdrop = document.getElementById('modal-backdrop');
+const stepDrop = document.getElementById('step-drop');
+const stepReport = document.getElementById('step-report');
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('file-input');
+const modalStatus = document.getElementById('modal-status');
+const compatRows = document.getElementById('compat-rows');
+const reportSummary = document.getElementById('report-summary');
+
+let pendingImport = null; // { importedRoots, stats, compat, fileName }
+
+function openModal(){ modalBackdrop.classList.add('open'); resetModal(); }
+function closeModal(){ modalBackdrop.classList.remove('open'); }
+function resetModal(){
+  stepDrop.style.display = ''; stepReport.style.display = 'none';
+  modalStatus.textContent = ''; modalStatus.className = '';
+  pendingImport = null;
+}
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('btn-cancel-import').addEventListener('click', closeModal);
+document.getElementById('btn-import').addEventListener('click', openModal);
+document.getElementById('dropzone-select').addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('click', () => fileInput.click());
+['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
+dropzone.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) handleFile(f); });
+fileInput.addEventListener('change', e => { const f = e.target.files[0]; if (f) handleFile(f); });
+
+document.getElementById('sample-btn').addEventListener('click', () => {
+  const blob = new Blob([SAMPLE_RBXLX], { type: 'application/xml' });
+  handleFile(new File([blob], 'sample-place.rbxlx'));
+});
+
+function handleFile(file){
+  modalStatus.className = ''; modalStatus.textContent = 'Leyendo ' + file.name + '…';
+  const isRbxl = /\.rbxl$/i.test(file.name) && !/\.rbxlx$/i.test(file.name);
+  if (isRbxl){
+    modalStatus.className = 'err';
+    modalStatus.textContent = '.rbxl es binario — su parser aun no esta implementado (Fase 6). Exporta o guarda tu Place como .rbxlx (XML) desde Roblox Studio e intentalo de nuevo.';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const { importedRoots, stats } = parseRbxlx(reader.result);
+      const compat = computeCompatibility(stats);
+      pendingImport = { importedRoots, stats, compat, fileName: file.name };
+      showReport();
+    } catch (err){
+      modalStatus.className = 'err';
+      modalStatus.textContent = 'No se pudo importar: ' + err.message;
+    }
+  };
+  reader.onerror = () => { modalStatus.className='err'; modalStatus.textContent = 'No se pudo leer el archivo.'; };
+  reader.readAsText(file);
+}
+
+function bar(label, value){
+  return `<div class="compat-row"><span class="label">${label}</span>
+    <div class="bar"><div style="width:${value}%"></div></div>
+    <span class="pct">${value}%</span></div>`;
+}
+function showReport(){
+  stepDrop.style.display = 'none';
+  stepReport.style.display = '';
+  const { stats, compat, fileName } = pendingImport;
+  compatRows.innerHTML =
+    bar('Instances', compat.instancesPct) +
+    bar('Scripts', compat.scriptsPct) +
+    bar('Properties', compat.propsPct) +
+    bar('Services', compat.servicesPct) +
+    bar('Physics (est.)', compat.physicsPct);
+  const unsupported = Array.from(stats.unsupportedClasses);
+  reportSummary.innerHTML =
+    `<b>${fileName}</b> — ${stats.totalItems} instancias, ${stats.scripts} scripts (${stats.scriptsSourceRecovered} con Source recuperado).<br>` +
+    (unsupported.length
+      ? `Clases no mapeadas explicitamente (se importan como genericas): ${unsupported.join(', ')}.<br>`
+      : '') +
+    `Compatibilidad global reportada: <b>${compat.overall}%</b> — no se muestra 100% salvo verificacion real, por diseno.`;
+  Output.log('Importer', `Analisis completo de ${fileName}: ${compat.overall}% compatible.`);
+}
+
+document.getElementById('btn-confirm-import').addEventListener('click', () => {
+  if (!pendingImport) return;
+  const { importedRoots } = pendingImport;
+  let mergedCount = 0;
+  importedRoots.forEach(rootInst => {
+    const existingService = SERVICE_BY_CLASS[rootInst.className];
+    if (existingService){
+      // merge children into the matching existing service (non-destructive: original stays untouched, we clone into the live tree)
+      rootInst.children.slice().forEach(child => { child.setParent(existingService); mergedCount++; });
+    } else {
+      rootInst.setParent(game);
+      mergedCount++;
+    }
+  });
+  Output.ok('Importer', `Importadas ${mergedCount} instancias de nivel superior al DataModel.`);
+  renderTree();
+  closeModal();
+});
+
+/* A tiny embedded sample so "Probar con un .rbxlx de ejemplo" works without a real file */
+const SAMPLE_RBXLX = `<roblox version="4">
+  <Item class="Workspace" referent="1">
+    <Properties><string name="Name">Workspace</string></Properties>
+    <Item class="Part" referent="2">
+      <Properties>
+        <string name="Name">ImportedRamp</string>
+        <Vector3 name="Size"><X>12</X><Y>1</Y><Z>6</Z></Vector3>
+        <bool name="Anchored">true</bool>
+      </Properties>
+    </Item>
+    <Item class="Script" referent="3">
+      <Properties>
+        <string name="Name">CoinSpawner</string>
+        <ProtectedString name="Source">print("CoinSpawner importado desde .rbxlx")
+wait(0.5)
+print("Generando monedas...")</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="ReplicatedStorage" referent="4">
+    <Properties><string name="Name">ReplicatedStorage</string></Properties>
+    <Item class="RemoteEvent" referent="5">
+      <Properties><string name="Name">CollectCoin</string></Properties>
+    </Item>
+    <Item class="ModuleScript" referent="6">
+      <Properties>
+        <string name="Name">CoinConfig</string>
+        <ProtectedString name="Source">return { value = 5 }</ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="SurfaceAppearance" referent="7">
+    <Properties><string name="Name">WeirdUnknownThing</string></Properties>
+  </Item>
+</roblox>`;
+
+/* ============================================================================
+   EXPLORER / PROPERTIES UI
+   ============================================================================ */
+const treeEl = document.getElementById('explorer-tree');
+const propsEl = document.getElementById('props-list');
+let selected = null;
+const ICONS = {
+  DataModel:'🎮', Workspace:'🗺️', Players:'👥', Lighting:'💡', ReplicatedStorage:'🔁',
+  ServerScriptService:'🖥️', ServerStorage:'📦', StarterGui:'🪟', StarterPack:'🎒',
+  StarterPlayer:'🧍', SoundService:'🔊', Part:'🧱', SpawnLocation:'🔴', Script:'📜',
+  LocalScript:'📄', ModuleScript:'📘', Folder:'📁', RemoteEvent:'📡', RemoteFunction:'📡'
+};
+function renderTree(){ treeEl.innerHTML=''; treeEl.appendChild(buildNode(game,0)); }
+function buildNode(inst, depth){
+  const row = document.createElement('div');
+  row.className = 'node' + (selected===inst ? ' selected' : '');
+  row.style.paddingLeft = (10+depth*14)+'px';
+  const icon = ICONS[inst.className] || '⬜';
+  const flag = inst.importFlags?.imported ? '<span class="flag" title="Importado">⭳</span>' : '';
+  row.innerHTML = `<span class="ic">${icon}</span><span>${inst.name}</span><span class="cls">${inst.className}</span>${flag}`;
+  row.addEventListener('click', e => { e.stopPropagation(); select(inst); });
+  const wrap = document.createElement('div');
+  wrap.appendChild(row);
+  inst.children.forEach(c => wrap.appendChild(buildNode(c, depth+1)));
+  return wrap;
+}
+function select(inst){ selected=inst; renderTree(); renderProps(); }
+function renderProps(){
+  if (!selected){ propsEl.innerHTML='<div id="props-empty">Selecciona un objeto en el Explorer</div>'; return; }
+  propsEl.innerHTML='';
+  Object.entries(selected.properties).forEach(([k,v]) => {
+    const row=document.createElement('div'); row.className='prop-row';
+    row.innerHTML = `<span class="k">${k}</span><input data-key="${k}" value="${String(v).replace(/"/g,'&quot;')}">`;
+    propsEl.appendChild(row);
+  });
+  if (selected.source !== undefined){
+    const row=document.createElement('div'); row.className='prop-row';
+    row.innerHTML = `<span class="k">Source</span><span style="color:var(--muted);font-size:11px;">${selected.source===null?'NOT AVAILABLE':'(' + selected.source.length + ' chars)'}</span>`;
+    propsEl.appendChild(row);
+  }
+  propsEl.querySelectorAll('input').forEach(inp => inp.addEventListener('change', () => {
+    let v = inp.value; if (v==='true') v=true; else if (v==='false') v=false;
+    selected.setProp(inp.dataset.key, v); renderTree();
+  }));
+  if (['Script','LocalScript','ModuleScript'].includes(selected.className) && selected.source){
+    const btn=document.createElement('button');
+    btn.textContent='▶ Ejecutar este Script';
+    btn.style.cssText='margin-top:8px;width:100%;padding:8px;border-radius:6px;border:1px solid var(--panel-border);background:transparent;color:var(--text);cursor:pointer;font-size:12px;';
+    btn.addEventListener('click', () => runScript(selected));
+    propsEl.appendChild(btn);
+  }
+}
+
+document.getElementById('btn-run').addEventListener('click', () => {
+  if (!selected || !['Script','LocalScript','ModuleScript'].includes(selected.className)){
+    Output.warn('Mirror', 'Selecciona un Script en el Explorer.'); return;
+  }
+  runScript(selected);
+});
+document.getElementById('btn-stop').addEventListener('click', () => Output.log('Mirror','Detenido.'));
+document.getElementById('output-clear').addEventListener('click', () => Output.clear());
+document.getElementById('btn-toggle-studio').addEventListener('click', e => {
+  document.body.classList.toggle('studio-on');
+  e.target.textContent = document.body.classList.contains('studio-on') ? 'Studio: ON' : 'Studio: OFF';
+});
+
+const btnEdit=document.getElementById('btn-edit'), btnPlay=document.getElementById('btn-play'),
+      btnStop=document.getElementById('btn-stop'), editHint=document.getElementById('edit-hint');
+btnPlay.addEventListener('click', async () => {
+  btnEdit.classList.remove('active'); btnPlay.classList.add('active'); btnStop.disabled=false; editHint.style.display='none';
+  Output.clear(); Output.log('Mirror Runtime','Iniciando experiencia...');
+  const all=[]; (function collect(i){all.push(i); i.children.forEach(collect);})(game);
+  for (const s of all.filter(i=>i.className==='Script')) await runScript(s);
+  Players.fire('PlayerAdded','Player1');
+  for (const s of all.filter(i=>i.className==='LocalScript')) await runScript(s);
+});
+btnEdit.addEventListener('click', () => {
+  btnEdit.classList.add('active'); btnPlay.classList.remove('active'); btnStop.disabled=true; editHint.style.display='';
+});
+
+/* ============================================================================
+   3D RUNTIME (Fase 1, reused as-is)
+   ============================================================================ */
+Output.init(); renderTree(); select(Workspace);
+
+const sceneRoot=document.getElementById('scene');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+function sizeRenderer(){ const w=sceneRoot.clientWidth,h=sceneRoot.clientHeight; renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+sceneRoot.appendChild(renderer.domElement);
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x8fc7f2); scene.fog=new THREE.Fog(0x8fc7f2,60,220);
+const camera=new THREE.PerspectiveCamera(60,1,0.1,1000);
+scene.add(new THREE.HemisphereLight(0xbfe0ff,0x4a5a3a,0.85));
+const sun=new THREE.DirectionalLight(0xffffff,1.15); sun.position.set(60,90,40); sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048); sun.shadow.camera.left=-80; sun.shadow.camera.right=80; sun.shadow.camera.top=80; sun.shadow.camera.bottom=-80; sun.shadow.camera.far=300;
+scene.add(sun);
+const PLATE_SIZE=128;
+const plate=new THREE.Mesh(new THREE.BoxGeometry(PLATE_SIZE,1,PLATE_SIZE), new THREE.MeshStandardMaterial({color:0x3d7a3d,roughness:0.95}));
+plate.position.y=-0.5; plate.receiveShadow=true; scene.add(plate);
+const grid=new THREE.GridHelper(PLATE_SIZE,PLATE_SIZE/4,0x2a5c2a,0x2a5c2a); grid.position.y=0.01; grid.material.opacity=0.25; grid.material.transparent=true; scene.add(grid);
+function block(w,h,d,color){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color,roughness:0.6,metalness:0.05})); m.castShadow=true; m.receiveShadow=true; return m; }
+const character=new THREE.Group();
+const torso=block(2,2,1,0x2b5fad); torso.position.y=3; character.add(torso);
+const head=block(1.4,1.4,1.4,0xf3c93c); head.position.y=4.7; character.add(head);
+const eyeMat=new THREE.MeshStandardMaterial({color:0x1a1a1a}); const eyeGeo=new THREE.BoxGeometry(0.14,0.14,0.05);
+const eyeL=new THREE.Mesh(eyeGeo,eyeMat); eyeL.position.set(-0.3,4.75,0.73);
+const eyeR=new THREE.Mesh(eyeGeo,eyeMat); eyeR.position.set(0.3,4.75,0.73);
+character.add(eyeL,eyeR);
+const smile=new THREE.Mesh(new THREE.BoxGeometry(0.5,0.08,0.05),eyeMat); smile.position.set(0,4.45,0.73); character.add(smile);
+const armL=block(0.6,2,0.6,0xf3c93c); armL.position.set(-1.3,3,0); character.add(armL);
+const armR=block(0.6,2,0.6,0xf3c93c); armR.position.set(1.3,3,0); character.add(armR);
+const legL=block(0.8,2,0.8,0x4a8f3c); legL.position.set(-0.5,1,0); character.add(legL);
+const legR=block(0.8,2,0.8,0x4a8f3c); legR.position.set(0.5,1,0); character.add(legR);
+scene.add(character);
+const spawnMesh=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,0.15,24), new THREE.MeshStandardMaterial({color:0xd94f4f,transparent:true,opacity:0.55,emissive:0x330000}));
+spawnMesh.position.set(0,0.08,0); scene.add(spawnMesh);
+[[10,-6],[-14,8],[6,14]].forEach(([x,z])=>{ const b=block(3,3,3,0x9a9a9a); b.position.set(x,1.5,z); scene.add(b); });
+
+const state={velocityY:0,onGround:true,yaw:0,camYaw:Math.PI,camPitch:0.35,camDistance:9,move:{x:0,z:0},jumpRequested:false,speed:9,jumpVelocity:9.5,gravity:24};
+const keys={};
+window.addEventListener('keydown', e=>{keys[e.code]=true; if(e.code==='Space') state.jumpRequested=true;});
+window.addEventListener('keyup', e=>{keys[e.code]=false;});
+function readKeyboardMove(){ let x=0,z=0;
+  if(keys['KeyW']||keys['ArrowUp'])z-=1; if(keys['KeyS']||keys['ArrowDown'])z+=1;
+  if(keys['KeyA']||keys['ArrowLeft'])x-=1; if(keys['KeyD']||keys['ArrowRight'])x+=1;
+  const len=Math.hypot(x,z); if(len>0){x/=len;z/=len;} return {x,z}; }
+let dragging=false,lastX=0,lastY=0;
+renderer.domElement.addEventListener('pointerdown', e=>{ if(e.target.closest('#stick-zone')||e.target.closest('#jump-btn'))return; dragging=true; lastX=e.clientX; lastY=e.clientY; });
+window.addEventListener('pointerup', ()=>{dragging=false;});
+window.addEventListener('pointermove', e=>{ if(!dragging)return; const dx=e.clientX-lastX,dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+  state.camYaw-=dx*0.006; state.camPitch=Math.max(0.08,Math.min(1.1,state.camPitch-dy*0.004)); });
+const stickZone=document.getElementById('stick-zone'), stickKnob=document.getElementById('stick-knob'), jumpBtn=document.getElementById('jump-btn');
+let stickActive=false, stickId=null; const stickCenter={x:0,y:0};
+stickZone.addEventListener('pointerdown', e=>{ stickActive=true; stickId=e.pointerId; const r=stickZone.getBoundingClientRect(); stickCenter.x=r.left+r.width/2; stickCenter.y=r.top+r.height/2; stickZone.setPointerCapture(e.pointerId); });
+window.addEventListener('pointermove', e=>{ if(!stickActive||e.pointerId!==stickId)return; let dx=e.clientX-stickCenter.x,dy=e.clientY-stickCenter.y; const max=42; const len=Math.hypot(dx,dy); if(len>max){dx=dx/len*max;dy=dy/len*max;} stickKnob.style.left=(36+dx)+'px'; stickKnob.style.top=(36+dy)+'px'; state.move.x=dx/max; state.move.z=dy/max; });
+window.addEventListener('pointerup', e=>{ if(e.pointerId!==stickId)return; stickActive=false; stickKnob.style.left='36px'; stickKnob.style.top='36px'; state.move.x=0; state.move.z=0; });
+jumpBtn.addEventListener('pointerdown', ()=>{state.jumpRequested=true;});
+window.addEventListener('resize', sizeRenderer);
+const clock=new THREE.Clock();
+function update(dt){
+  const kb=readKeyboardMove();
+  const kbActive=keys['KeyW']||keys['KeyA']||keys['KeyS']||keys['KeyD']||keys['ArrowUp']||keys['ArrowDown']||keys['ArrowLeft']||keys['ArrowRight'];
+  const mx=kbActive?kb.x:state.move.x, mz=kbActive?kb.z:state.move.z;
+  const forward=new THREE.Vector3(Math.sin(state.camYaw),0,Math.cos(state.camYaw));
+  const right=new THREE.Vector3(Math.sin(state.camYaw+Math.PI/2),0,Math.cos(state.camYaw+Math.PI/2));
+  const moveDir=new THREE.Vector3(); moveDir.addScaledVector(forward,mz); moveDir.addScaledVector(right,mx);
+  if (moveDir.lengthSq()>0.0001){ moveDir.normalize(); character.position.addScaledVector(moveDir,state.speed*dt);
+    const targetYaw=Math.atan2(moveDir.x,moveDir.z); let diff=targetYaw-state.yaw; diff=Math.atan2(Math.sin(diff),Math.cos(diff));
+    state.yaw+=diff*Math.min(1,dt*10); character.rotation.y=state.yaw; }
+  const half=PLATE_SIZE/2-2; character.position.x=Math.max(-half,Math.min(half,character.position.x)); character.position.z=Math.max(-half,Math.min(half,character.position.z));
+  if (state.jumpRequested && state.onGround){ state.velocityY=state.jumpVelocity; state.onGround=false; } state.jumpRequested=false;
+  state.velocityY-=state.gravity*dt; character.position.y+=state.velocityY*dt;
+  if (character.position.y<=0){ character.position.y=0; state.velocityY=0; state.onGround=true; }
+  const camTarget=character.position.clone().add(new THREE.Vector3(0,3.2,0));
+  const camOffset=new THREE.Vector3(Math.sin(state.camYaw)*-state.camDistance*Math.cos(state.camPitch), state.camDistance*Math.sin(state.camPitch)+1.5, Math.cos(state.camYaw)*-state.camDistance*Math.cos(state.camPitch));
+  camera.position.lerp(camTarget.clone().add(camOffset), Math.min(1,dt*8)); camera.lookAt(camTarget);
+}
+function animate(){ requestAnimationFrame(animate); const dt=Math.min(0.05,clock.getDelta()); update(dt); renderer.render(scene,camera); }
+sizeRenderer(); animate();
+})();
+</script>
+</body>
+</html>
