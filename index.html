@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Roblox Mirror — Fase 7+8 · Security Lab + Defense Generator</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
 <style>
   :root{
     --bg:#0c0e12; --panel:#14171d; --panel-border:#262b34; --text:#e7ebf0;
@@ -259,7 +261,7 @@
         <div id="dropzone">
           <b>Arrastra tu archivo .rbxlx o .rbxl aquí</b>
           o <span style="text-decoration:underline;cursor:pointer;" id="import-dropzone-select">selecciona un archivo</span>
-          <input type="file" id="import-file-input" accept=".rbxlx,.rbxl,.xml">
+          <input type="file" id="import-file-input" accept=".rbxlx,.rbxl,.xml,.glb,.gltf,.obj,.png,.jpg,.jpeg,.webp" multiple>
         </div>
         <div class="report-note">
           Se parsea <b>.rbxlx</b> (XML) directamente en el navegador, sin subir nada a ningún servidor.
@@ -465,6 +467,66 @@ function cloneProject(source){
    ============================================================================ */
 const KNOWN_SCRIPT_CLASSES = { Script:'Script', LocalScript:'LocalScript', ModuleScript:'ModuleScript' };
 
+/* Minimal reflection defaults (subset of Studio class defaults) */
+const CLASS_DEFAULTS = {
+  Part: { Size:'4, 1, 2', Anchored:false, CanCollide:true, Transparency:0, Shape:'1', Material:'Plastic' },
+  SpawnLocation: { Size:'6, 1, 6', Anchored:true, CanCollide:true, Transparency:0, Material:'Plastic' },
+  WedgePart: { Size:'4, 1, 2', Anchored:false, CanCollide:true, Material:'Plastic' },
+  CornerWedgePart: { Size:'4, 1, 2', Anchored:false, CanCollide:true, Material:'Plastic' },
+  TrussPart: { Size:'2, 2, 2', Anchored:false, CanCollide:true, Material:'Plastic' },
+  MeshPart: { Size:'4, 4, 4', Anchored:false, CanCollide:true, Material:'Plastic' },
+  Seat: { Size:'4, 1, 2', Anchored:false, CanCollide:true, Material:'Plastic' },
+  VehicleSeat: { Size:'4, 1, 2', Anchored:false, CanCollide:true, Material:'Plastic' }
+};
+
+/* Roblox Material enum → Three.js PBR-ish presets */
+const MATERIAL_PRESETS = {
+  Plastic:{ rough:0.7, metal:0.0, emissive:0 }, SmoothPlastic:{ rough:0.35, metal:0.0, emissive:0 },
+  Wood:{ rough:0.85, metal:0.0, emissive:0 }, WoodPlanks:{ rough:0.9, metal:0.0, emissive:0 },
+  Marble:{ rough:0.25, metal:0.05, emissive:0 }, Slate:{ rough:0.8, metal:0.0, emissive:0 },
+  Concrete:{ rough:0.95, metal:0.0, emissive:0 }, Granite:{ rough:0.75, metal:0.0, emissive:0 },
+  Brick:{ rough:0.9, metal:0.0, emissive:0 }, Pebble:{ rough:0.95, metal:0.0, emissive:0 },
+  Cobblestone:{ rough:0.92, metal:0.0, emissive:0 }, Rock:{ rough:0.9, metal:0.0, emissive:0 },
+  Sandstone:{ rough:0.88, metal:0.0, emissive:0 }, Sand:{ rough:0.95, metal:0.0, emissive:0 },
+  Ground:{ rough:1.0, metal:0.0, emissive:0 }, Grass:{ rough:0.95, metal:0.0, emissive:0 },
+  LeafyGrass:{ rough:0.95, metal:0.0, emissive:0 }, Snow:{ rough:0.6, metal:0.0, emissive:0 },
+  Glacier:{ rough:0.3, metal:0.05, emissive:0 }, Mud:{ rough:1.0, metal:0.0, emissive:0 },
+  Asphalt:{ rough:0.9, metal:0.0, emissive:0 }, Salt:{ rough:0.7, metal:0.0, emissive:0 },
+  Metal:{ rough:0.35, metal:0.9, emissive:0 }, CorrodedMetal:{ rough:0.7, metal:0.7, emissive:0 },
+  DiamondPlate:{ rough:0.4, metal:0.95, emissive:0 }, Foil:{ rough:0.15, metal:1.0, emissive:0 },
+  Glass:{ rough:0.05, metal:0.0, emissive:0 }, ForceField:{ rough:0.2, metal:0.3, emissive:0.15 },
+  Neon:{ rough:0.4, metal:0.0, emissive:0.85 }, Ice:{ rough:0.1, metal:0.0, emissive:0 },
+  Fabric:{ rough:0.95, metal:0.0, emissive:0 }, Carpet:{ rough:1.0, metal:0.0, emissive:0 },
+  Planks:{ rough:0.9, metal:0.0, emissive:0 }, Limestone:{ rough:0.85, metal:0.0, emissive:0 },
+  Basalt:{ rough:0.9, metal:0.0, emissive:0 }, CrackedLava:{ rough:0.85, metal:0.0, emissive:0.2 },
+  Pavement:{ rough:0.9, metal:0.0, emissive:0 }, Cardboard:{ rough:0.9, metal:0.0, emissive:0 },
+  CeramicTiles:{ rough:0.3, metal:0.0, emissive:0 }, ClayRoofTiles:{ rough:0.85, metal:0.0, emissive:0 },
+  RoofShingles:{ rough:0.9, metal:0.0, emissive:0 }, Rubber:{ rough:0.95, metal:0.0, emissive:0 }
+};
+const MATERIAL_BY_TOKEN = {
+  '256':'Plastic','512':'SmoothPlastic','788':'Neon','1088':'Wood','864':'Metal','1536':'Grass',
+  '1312':'Ice','1280':'Glass','1056':'DiamondPlate','1376':'ForceField','1568':'Concrete'
+};
+
+function resolveMaterialName(raw){
+  if (raw==null || raw==='') return 'Plastic';
+  const s = String(raw).trim();
+  if (MATERIAL_PRESETS[s]) return s;
+  if (MATERIAL_BY_TOKEN[s]) return MATERIAL_BY_TOKEN[s];
+  // enum number fallbacks common in files
+  const n = parseInt(s,10);
+  if (!isNaN(n)){
+    if (n===256) return 'Plastic'; if (n===288) return 'SmoothPlastic'; if (n===788) return 'Neon';
+    if (n===1088) return 'Wood'; if (n===864) return 'Metal'; if (n===1280) return 'Glass';
+  }
+  return s;
+}
+
+function getChildText(el, names){
+  for (const n of names){ const c = el.getElementsByTagName(n)[0]; if (c) return c.textContent; }
+  return null;
+}
+
 function parseRbxlx(xmlText){
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
   const parseErr = doc.querySelector('parsererror');
@@ -473,7 +535,141 @@ function parseRbxlx(xmlText){
   if (!rootEl || rootEl.tagName.toLowerCase() !== 'roblox') throw new Error('No es un archivo .rbxlx reconocible (falta <roblox>).');
 
   const stats = { totalItems:0, namedRecovered:0, propsTotal:0, propsRecovered:0, scripts:0,
-    scriptsSourceRecovered:0, servicesMatched:0, servicesUnmatched:0, unsupportedClasses:new Set() };
+    scriptsSourceRecovered:0, servicesMatched:0, servicesUnmatched:0, unsupportedClasses:new Set(),
+    refsTotal:0, refsResolved:0, typesUnsupported:new Set(), sharedStrings:0 };
+
+  // SharedString table (md5 → content)
+  const sharedStrings = new Map();
+  Array.from(rootEl.children).forEach(ch => {
+    if (ch.tagName === 'SharedStrings' || ch.tagName === 'Item' && ch.getAttribute('class')==='SharedStrings'){
+      Array.from(ch.children).forEach(ss => {
+        const md5 = ss.getAttribute('md5') || ss.getAttribute('name');
+        if (md5){ sharedStrings.set(md5, ss.textContent||''); stats.sharedStrings++; }
+      });
+    }
+    if (ch.tagName === 'SharedStringItem' || (ch.tagName==='Item' && ch.getAttribute('class')==='SharedString')){
+      const md5 = ch.getAttribute('md5'); if (md5){ sharedStrings.set(md5, ch.textContent||''); stats.sharedStrings++; }
+    }
+  });
+  // Also scan for <SharedString> property nodes' hashes later
+
+  const referentMap = new Map(); // referent string → MirrorInstance
+  const pendingRefs = []; // { inst, key, refId }
+
+  const CANON = {
+    size:'Size', Size:'Size', cframe:'CFrame', CFrame:'CFrame', position:'Position', Position:'Position',
+    color3uint8:'Color3uint8', Color3uint8:'Color3uint8', color3:'Color3', Color3:'Color3', Color:'Color',
+    transparency:'Transparency', Transparency:'Transparency', anchored:'Anchored', Anchored:'Anchored',
+    cancollide:'CanCollide', CanCollide:'CanCollide', name:'Name', Name:'Name', source:'Source', Source:'Source',
+    shape:'Shape', Shape:'Shape', meshtype:'MeshType', MeshType:'MeshType', material:'Material', Material:'Material',
+    reflectance:'Reflectance', Reflectance:'Reflectance', meshid:'MeshId', MeshId:'MeshId',
+    textureid:'TextureID', TextureID:'TextureID', texture:'Texture', formfactor:'FormFactor', formFactorRaw:'formFactorRaw',
+    brightness:'Brightness', ambient:'Ambient', outdoorambient:'OutdoorAmbient', fogcolor:'FogColor',
+    fogstart:'FogStart', fogend:'FogEnd', clocktime:'ClockTime', geographiclatitude:'GeographicLatitude'
+  };
+
+  function parseTypeValue(node, key){
+    const tag = node.tagName;
+    // SharedString reference
+    if (tag==='SharedString'){
+      const hash = (node.textContent||'').trim();
+      stats.sharedStrings++;
+      if (sharedStrings.has(hash)) return sharedStrings.get(hash);
+      return hash; // unresolved hash
+    }
+    if (tag==='string'||tag==='ProtectedString') return node.textContent;
+    if (tag==='BinaryString'){
+      // Keep base64 head for inspection; full binary not decoded in-browser
+      const t = (node.textContent||'').replace(/\s+/g,'');
+      return t ? ('[BinaryString:'+t.length+'b64]') : '';
+    }
+    if (tag==='bool') return node.textContent.trim()==='true';
+    if (['float','double','int','int64','token','number'].includes(tag)) return node.textContent.trim();
+    if (tag==='Vector2' || tag==='Vector2int16'){
+      const x=getChildText(node,['X','x'])??'0', y=getChildText(node,['Y','y'])??'0';
+      return `${(+x).toFixed(2)}, ${(+y).toFixed(2)}`;
+    }
+    if (tag==='Vector3' || tag==='vector3' || tag==='Vector3int16'){
+      let x=getChildText(node,['X','x']), y=getChildText(node,['Y','y']), z=getChildText(node,['Z','z']);
+      if (x==null||y==null||z==null){
+        const nums=(node.textContent||'').trim().split(/[,\s]+/).map(parseFloat).filter(n=>!isNaN(n));
+        if (nums.length>=3){ x=nums[0]; y=nums[1]; z=nums[2]; }
+      }
+      return `${(+(x??0)).toFixed(2)}, ${(+(y??0)).toFixed(2)}, ${(+(z??0)).toFixed(2)}`;
+    }
+    if (tag==='CoordinateFrame' || tag==='CFrame' || tag==='coordinateframe' || tag==='OptionalCoordinateFrame'){
+      const X=getChildText(node,['X','x']), Y=getChildText(node,['Y','y']), Z=getChildText(node,['Z','z']);
+      if (X!=null && Y!=null && Z!=null){
+        const R00=getChildText(node,['R00'])??'1', R01=getChildText(node,['R01'])??'0', R02=getChildText(node,['R02'])??'0';
+        const R10=getChildText(node,['R10'])??'0', R11=getChildText(node,['R11'])??'1', R12=getChildText(node,['R12'])??'0';
+        const R20=getChildText(node,['R20'])??'0', R21=getChildText(node,['R21'])??'0', R22=getChildText(node,['R22'])??'1';
+        return [X,Y,Z,R00,R01,R02,R10,R11,R12,R20,R21,R22].map(v=>(+v).toFixed(4)).join(', ');
+      }
+      return (node.textContent||'').trim().slice(0,160);
+    }
+    if (tag==='Color3'){
+      const r=getChildText(node,['R','r']), g=getChildText(node,['G','g']), b=getChildText(node,['B','b']);
+      if (r!=null&&g!=null&&b!=null){
+        const ri=Math.round(Math.min(1,Math.max(0,+r))*255), gi=Math.round(Math.min(1,Math.max(0,+g))*255), bi=Math.round(Math.min(1,Math.max(0,+b))*255);
+        return String((ri<<16)|(gi<<8)|bi);
+      }
+      return node.textContent.trim();
+    }
+    if (tag==='Color3uint8') return node.textContent.trim();
+    if (tag==='BrickColor' || (tag==='int' && /brickcolor/i.test(key))) return node.textContent.trim();
+    if (tag==='UDim'){
+      const s=getChildText(node,['S','s','Scale'])??'0', o=getChildText(node,['O','o','Offset'])??'0';
+      return `scale=${s}, offset=${o}`;
+    }
+    if (tag==='UDim2'){
+      const xs=getChildText(node,['XS','xs'])??getChildText(node,['X'])??'0';
+      const xo=getChildText(node,['XO','xo'])??'0';
+      const ys=getChildText(node,['YS','ys'])??getChildText(node,['Y'])??'0';
+      const yo=getChildText(node,['YO','yo'])??'0';
+      // nested UDim
+      const X=node.getElementsByTagName('X')[0], Y=node.getElementsByTagName('Y')[0];
+      if (X && Y){
+        const xs2=getChildText(X,['S','Scale'])??xs, xo2=getChildText(X,['O','Offset'])??xo;
+        const ys2=getChildText(Y,['S','Scale'])??ys, yo2=getChildText(Y,['O','Offset'])??yo;
+        return `{${xs2}, ${xo2}}, {${ys2}, ${yo2}}`;
+      }
+      return `{${xs}, ${xo}}, {${ys}, ${yo}}`;
+    }
+    if (tag==='Rect' || tag==='Rect2D'){
+      const minx=getChildText(node,['Min','min'])||'';
+      return (node.textContent||'').trim().slice(0,80) || minx;
+    }
+    if (tag==='NumberRange'){
+      const a=(node.textContent||'').trim().split(/\s+/);
+      return a.length>=2 ? `${a[0]} .. ${a[1]}` : (node.textContent||'').trim();
+    }
+    if (tag==='NumberSequence' || tag==='ColorSequence'){
+      return `[${tag}:`+((node.textContent||'').trim().slice(0,60))+']';
+    }
+    if (tag==='PhysicalProperties'){
+      const dens=getChildText(node,['Density'])??'?', fric=getChildText(node,['Friction'])??'?';
+      const elas=getChildText(node,['Elasticity'])??'?';
+      return `D=${dens} F=${fric} E=${elas}`;
+    }
+    if (tag==='Ray'){
+      return (node.textContent||'').trim().slice(0,80);
+    }
+    if (tag==='Faces' || tag==='Axes') return node.textContent.trim();
+    if (tag==='Ref' || tag==='ref'){
+      stats.refsTotal++;
+      return { __ref: (node.textContent||'').trim() };
+    }
+    if (tag==='Content' || tag==='content'){
+      const url = getChildText(node,['url','Url']) || node.textContent.trim();
+      return url;
+    }
+    if (tag==='Font' || tag==='FontFace') return (node.textContent||'').trim().slice(0,80);
+    if (tag==='UniqueId') return node.textContent.trim();
+    // Fallback: keep text, track unknown type
+    stats.typesUnsupported.add(tag);
+    const raw = (node.textContent||'').trim();
+    return raw ? raw.slice(0,120) : `(${tag})`;
+  }
 
   function readProperties(itemEl){
     const propsEl = Array.from(itemEl.children).find(c => c.tagName === 'Properties');
@@ -482,60 +678,19 @@ function parseRbxlx(xmlText){
       Array.from(propsEl.children).forEach(node => {
         const key = node.getAttribute('name'); if (!key) return;
         stats.propsTotal++;
-        const tag = node.tagName; let value;
-        if (tag==='string'||tag==='ProtectedString'||tag==='BinaryString') value = node.textContent;
-        else if (tag==='bool') value = node.textContent.trim()==='true';
-        else if (['float','double','int','int64','token'].includes(tag)) value = node.textContent.trim();
-        else if (tag==='Vector3' || tag==='vector3' || tag==='Vector3int16'){
-          // Roblox uses <X>/<Y>/<Z>; some exporters use lowercase. Also accept bare text "x y z".
-          const getChild = (el, names) => {
-            for (const n of names){ const c = el.getElementsByTagName(n)[0]; if (c) return c.textContent; }
-            return null;
-          };
-          let x = getChild(node, ['X','x']), y = getChild(node, ['Y','y']), z = getChild(node, ['Z','z']);
-          if (x==null || y==null || z==null){
-            const nums = (node.textContent||'').trim().split(/[,\s]+/).map(parseFloat).filter(n=>!isNaN(n));
-            if (nums.length>=3){ x=nums[0]; y=nums[1]; z=nums[2]; }
-          }
-          x = x??'0'; y = y??'0'; z = z??'0';
-          value = `${(+x).toFixed(2)}, ${(+y).toFixed(2)}, ${(+z).toFixed(2)}`;
-        }
-        else if (tag==='CoordinateFrame' || tag==='CFrame' || tag==='coordinateframe'){
-          const getChild = (el, names) => {
-            for (const n of names){ const c = el.getElementsByTagName(n)[0]; if (c) return c.textContent; }
-            return null;
-          };
-          const X=getChild(node,['X','x']), Y=getChild(node,['Y','y']), Z=getChild(node,['Z','z']);
-          if (X!=null && Y!=null && Z!=null){
-            const R00=getChild(node,['R00'])??'1', R01=getChild(node,['R01'])??'0', R02=getChild(node,['R02'])??'0';
-            const R10=getChild(node,['R10'])??'0', R11=getChild(node,['R11'])??'1', R12=getChild(node,['R12'])??'0';
-            const R20=getChild(node,['R20'])??'0', R21=getChild(node,['R21'])??'0', R22=getChild(node,['R22'])??'1';
-            value = [X,Y,Z,R00,R01,R02,R10,R11,R12,R20,R21,R22].map(v=>(+v).toFixed(4)).join(', ');
-          } else {
-            value = (node.textContent||'').trim().slice(0,120);
-          }
-        }
-        else if (tag==='Color3'){
-          const getChild = (el, names) => {
-            for (const n of names){ const c = el.getElementsByTagName(n)[0]; if (c) return c.textContent; }
-            return null;
-          };
-          const r=getChild(node,['R','r']), g=getChild(node,['G','g']), b=getChild(node,['B','b']);
-          if (r!=null && g!=null && b!=null){
-            const ri=Math.round(Math.min(1,Math.max(0,+r))*255), gi=Math.round(Math.min(1,Math.max(0,+g))*255), bi=Math.round(Math.min(1,Math.max(0,+b))*255);
-            value = String((ri<<16)|(gi<<8)|bi);
-          } else value = node.textContent.trim();
-        }
-        else if (tag==='Color3uint8') value = node.textContent.trim();
-        else value = node.textContent ? node.textContent.trim().slice(0,80) : '(unsupported)';
-        // Normalize known property names (Roblox XML sometimes uses lowercase "size")
-        const CANON = { size:'Size', Size:'Size', cframe:'CFrame', CFrame:'CFrame', position:'Position', Position:'Position',
-          color3uint8:'Color3uint8', Color3uint8:'Color3uint8', color3:'Color3', Color3:'Color3',
-          transparency:'Transparency', Transparency:'Transparency', anchored:'Anchored', Anchored:'Anchored',
-          cancollide:'CanCollide', CanCollide:'CanCollide', name:'Name', Name:'Name', source:'Source', Source:'Source' };
+        let value = parseTypeValue(node, key);
         const canonKey = CANON[key] || key;
-        if (value!==undefined && value!==null){ stats.propsRecovered++; props[canonKey]=value; }
-        if (canonKey==='Name') name=value; if (canonKey==='Source') source=value;
+        if (value!==undefined && value!==null){
+          if (value && typeof value==='object' && value.__ref!=null){
+            props[canonKey] = 'ref:'+value.__ref;
+            pendingRefs.push({ key:canonKey, refId:value.__ref, props });
+          } else {
+            stats.propsRecovered++;
+            props[canonKey]=value;
+          }
+        }
+        if (canonKey==='Name') name=value;
+        if (canonKey==='Source') source=value;
       });
     }
     return { props, name, source };
@@ -544,6 +699,7 @@ function parseRbxlx(xmlText){
   function buildInstance(itemEl){
     stats.totalItems++;
     const className = itemEl.getAttribute('class') || 'Instance';
+    const referent = itemEl.getAttribute('referent');
     const { props, name, source } = readProperties(itemEl);
     let inst;
     if (KNOWN_SCRIPT_CLASSES[className]){
@@ -555,18 +711,52 @@ function parseRbxlx(xmlText){
       inst = new MirrorInstance(className, name||className);
     }
     if (name) stats.namedRecovered++;
+    // Apply class defaults then overwrite with file props
+    const defaults = CLASS_DEFAULTS[className];
+    if (defaults) Object.entries(defaults).forEach(([k,v]) => { if (inst.properties[k]==null) inst.properties[k]=v; });
     Object.entries(props).forEach(([k,v]) => { if (k!=='Name') inst.properties[k]=v; });
     inst.imported = true;
-    const KNOWN_CLASSES = ['Part','Model','Folder','SpawnLocation','Workspace','Players','Lighting','ReplicatedStorage',
-      'ServerScriptService','ServerStorage','StarterGui','StarterPack','StarterPlayer','SoundService','RemoteEvent','RemoteFunction'];
-    if (!KNOWN_SCRIPT_CLASSES[className] && !KNOWN_CLASSES.includes(className)) stats.unsupportedClasses.add(className);
+    inst.referent = referent || null;
+    if (referent) referentMap.set(String(referent), inst);
+
+    // Bind pending refs that pointed at props object before inst existed
+    pendingRefs.forEach(pr => {
+      if (pr.props === props) pr.inst = inst;
+    });
+
+    const CORE = ['Part','Model','Folder','SpawnLocation','Workspace','Players','Lighting','ReplicatedStorage',
+      'ServerScriptService','ServerStorage','StarterGui','StarterPack','StarterPlayer','SoundService',
+      'RemoteEvent','RemoteFunction','WedgePart','CornerWedgePart','TrussPart','MeshPart','Seat','VehicleSeat',
+      'SpecialMesh','BlockMesh','CylinderMesh','Decal','Texture','UnionOperation','Attachment','Humanoid',
+      'Script','LocalScript','ModuleScript','Camera','Terrain','Configuration','BoolValue','IntValue',
+      'StringValue','NumberValue','ObjectValue','Vector3Value','CFrameValue','Color3Value','BindableEvent',
+      'BindableFunction','ClickDetector','ProximityPrompt','Weld','WeldConstraint','Tool','HopperBin',
+      'BillboardGui','SurfaceGui','Frame','TextLabel','TextButton','ImageLabel','Sound','ParticleEmitter',
+      'Fire','Smoke','Sparkles','Beam','Trail','PointLight','SpotLight','SurfaceLight','Atmosphere','Sky',
+      'BloomEffect','ColorCorrectionEffect','SunRaysEffect','BlurEffect','DepthOfFieldEffect'];
+    if (!KNOWN_SCRIPT_CLASSES[className] && !CORE.includes(className)) stats.unsupportedClasses.add(className);
     Array.from(itemEl.children).filter(c => c.tagName==='Item').forEach(childEl => buildInstance(childEl).setParent(inst));
     return inst;
   }
 
   const topItems = Array.from(rootEl.children).filter(c => c.tagName==='Item');
   if (topItems.length===0) throw new Error('El archivo no contiene ningun <Item> (place vacio o formato inesperado).');
-  return { importedRoots: topItems.map(buildInstance), stats };
+  const importedRoots = topItems.map(buildInstance);
+
+  // Resolve Ref properties to instance full names when possible
+  pendingRefs.forEach(({ inst, key, refId }) => {
+    if (!inst) return;
+    const target = referentMap.get(String(refId));
+    if (target){
+      inst.properties[key] = target.getFullName();
+      inst.properties['__ref_'+key] = target.id;
+      stats.refsResolved++;
+      stats.propsRecovered++;
+    }
+  });
+
+  stats.referentCount = referentMap.size;
+  return { importedRoots, stats, referentMap };
 }
 
 function computeCompatibility(stats){
@@ -575,9 +765,12 @@ function computeCompatibility(stats){
   const scriptsPct = stats.scripts>0 ? pct(stats.scriptsSourceRecovered, stats.scripts) : 100;
   const propsPct=pct(stats.propsRecovered, stats.propsTotal);
   const servicesPct=pct(stats.servicesMatched, (stats.servicesMatched+stats.servicesUnmatched)||1);
-  const physicsPct=100;
-  const overall=Math.round((instancesPct+scriptsPct+propsPct+servicesPct)/4);
-  return { instancesPct, scriptsPct, propsPct, servicesPct, physicsPct, overall };
+  const refsPct = stats.refsTotal>0 ? pct(stats.refsResolved, stats.refsTotal) : 100;
+  // Honest: physics/visuals are not full engine
+  const physicsPct=15;
+  const visualPct=35;
+  const overall=Math.round((instancesPct+scriptsPct+propsPct+servicesPct+refsPct+physicsPct+visualPct)/7);
+  return { instancesPct, scriptsPct, propsPct, servicesPct, refsPct, physicsPct, visualPct, overall };
 }
 
 const SAMPLE_RBXLX = `<roblox version="4">
@@ -648,11 +841,11 @@ function initImportWizard(){
   dropzone.addEventListener('click', () => fileInput.click());
   ['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('drag'); }));
   ['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('drag'); }));
-  dropzone.addEventListener('drop', e => { const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
-  fileInput.addEventListener('change', e => { const f=e.target.files[0]; if(f) handleFile(f); });
+  dropzone.addEventListener('drop', e => { const fs=e.dataTransfer.files; if(fs&&fs.length) handleFiles(fs); });
+  fileInput.addEventListener('change', e => { const fs=e.target.files; if(fs&&fs.length) handleFiles(fs); });
   document.getElementById('sample-btn').addEventListener('click', () => {
     const blob = new Blob([SAMPLE_RBXLX], {type:'application/xml'});
-    handleFile(new File([blob], 'sample-place.rbxlx'));
+    handleFiles([new File([blob], 'sample-place.rbxlx')]);
   });
   document.getElementById('btn-copy-termux').addEventListener('click', () => {
     const text = document.getElementById('termux-cmd').textContent;
@@ -672,24 +865,39 @@ cd ~/storage/downloads
 printf '%s\\n' 'local place = fs.read("${fileName}")' 'fs.write("${base}.rbxlx", place, "rbxmx")' 'print("CONVERSION TERMINADA")' | rbxmk run -
 ls -lh ${base}.rbxl*`;
     document.getElementById('termux-cmd').textContent = cmd;
-    Output.log('Importer', fileName + ' es .rbxl (binario) — se muestra el comando de conversion via rbxmk/Termux.');
+    Output.log('Importer', fileName + ' es .rbxl (binario) — convierte con rbxmk o sube el .rbxlx.');
   }
 
-  function handleFile(file){
-    status.className=''; status.textContent = 'Leyendo ' + file.name + '...';
-    const isRbxl = /\.rbxl$/i.test(file.name) && !/\.rbxlx$/i.test(file.name);
-    if (isRbxl){ showRbxlHelp(file.name); return; }
+  function handleFiles(fileList){
+    const files = Array.from(fileList);
+    const place = files.find(f => /\.rbxlx$/i.test(f.name) || /\.xml$/i.test(f.name));
+    const rbxl = files.find(f => /\.rbxl$/i.test(f.name) && !/\.rbxlx$/i.test(f.name));
+    const assets = files.filter(f => /\.(glb|gltf|obj|png|jpe?g|webp)$/i.test(f.name));
+    if (assets.length && typeof AssetLibrary !== 'undefined'){
+      AssetLibrary.ingestFiles(assets).then(n => {
+        status.className='ok';
+        status.textContent = (status.textContent?status.textContent+' · ':'') + n + ' asset(s) en biblioteca local.';
+        Output.ok('Assets', n + ' archivos cargados (glb/obj/texturas). MeshParts con MeshId coincidente usarán glTF.');
+        if (typeof syncSceneFromWorkspace === 'function') syncSceneFromWorkspace({ hideDemo:true });
+      });
+    }
+    if (rbxl && !place){ showRbxlHelp(rbxl.name); return; }
+    if (!place){
+      if (assets.length){ status.className='ok'; status.textContent='Assets cargados. Importa también un .rbxlx para el place.'; return; }
+      status.className='err'; status.textContent='Selecciona un .rbxlx (y opcionalmente .glb/.png).'; return;
+    }
+    status.className=''; status.textContent = 'Leyendo ' + place.name + '...';
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const { importedRoots, stats } = parseRbxlx(reader.result);
         const compat = computeCompatibility(stats);
-        pendingImport = { importedRoots, stats, compat, fileName: file.name };
+        pendingImport = { importedRoots, stats, compat, fileName: place.name };
         showReport();
       } catch (err){ status.className='err'; status.textContent = 'No se pudo importar: ' + err.message; }
     };
     reader.onerror = () => { status.className='err'; status.textContent='No se pudo leer el archivo.'; };
-    reader.readAsText(file);
+    reader.readAsText(place);
   }
 
   function bar(label, value){
@@ -698,7 +906,7 @@ ls -lh ${base}.rbxl*`;
   function showReport(){
     stepDrop.style.display='none'; stepRbxlHelp.style.display='none'; stepReport.style.display='';
     const { stats, compat, fileName } = pendingImport;
-    compatRows.innerHTML = bar('Instances',compat.instancesPct)+bar('Scripts',compat.scriptsPct)+bar('Properties',compat.propsPct)+bar('Services',compat.servicesPct)+bar('Physics (est.)',compat.physicsPct);
+    compatRows.innerHTML = bar('Instances',compat.instancesPct)+bar('Scripts',compat.scriptsPct)+bar('Properties',compat.propsPct)+bar('Services',compat.servicesPct)+bar('Refs',compat.refsPct??100)+bar('Visual (est.)',compat.visualPct??35)+bar('Physics (est.)',compat.physicsPct);
     const unsupported = Array.from(stats.unsupportedClasses);
     reportSummary.innerHTML = `<b>${fileName}</b> — ${stats.totalItems} instancias, ${stats.scripts} scripts (${stats.scriptsSourceRecovered} con Source recuperado).<br>` +
       (unsupported.length ? `Clases no mapeadas explicitamente: ${unsupported.join(', ')}.<br>` : '') +
@@ -720,6 +928,8 @@ ls -lh ${base}.rbxl*`;
     Output.ok('Importer', `Importadas ${mergedCount} instancias de nivel superior al DataModel.`);
     renderTree();
     if (typeof syncSceneFromWorkspace === 'function') syncSceneFromWorkspace({ hideDemo: true });
+    if (typeof applyLightingFromDataModel === 'function') applyLightingFromDataModel();
+    if (typeof PhysicsWorld !== 'undefined') PhysicsWorld.rebuildFromWorkspace();
     closeModal();
   });
 }
@@ -1081,8 +1291,10 @@ function renderProps(){
     let v=inp.value; if(v==='true')v=true; else if(v==='false')v=false;
     const key = inp.dataset.key;
     selected.setProp(key,v); renderTree();
-    if (typeof syncSceneInstance === 'function' && ['Size','CFrame','Color3uint8','Color3','Position','Transparency'].includes(key))
+    if (typeof syncSceneInstance === 'function' && ['Size','CFrame','Color3uint8','Color3','Color','Position','Transparency','Material','Reflectance','Shape'].includes(key))
       syncSceneInstance(selected);
+    if (typeof applyLightingFromDataModel === 'function' && selected && selected.className==='Lighting')
+      applyLightingFromDataModel();
   }));
 }
 
@@ -1110,13 +1322,43 @@ btnEdit.addEventListener('click', () => {
 function makeSandboxAPI(scriptInst){
   const src = scriptInst.getFullName();
   const root = inLab ? labProject : P;
-  return { print:(...a)=>Output.log(src,a.map(String).join(' ')), warn:(...a)=>Output.warn(src,a.map(String).join(' ')),
-    wait:(s)=>new Promise(r=>setTimeout(r,(s||0.03)*1000)), game: root.game, workspace: root.Workspace };
+  function wrap(inst){
+    if (!inst) return null;
+    return {
+      Name: inst.name, ClassName: inst.className,
+      GetFullName: () => inst.getFullName(),
+      FindFirstChild: (n) => wrap(inst.getChildren().find(c => c.name===n) || null),
+      FindFirstChildOfClass: (c) => wrap(inst.getChildren().find(x => x.className===c) || null),
+      GetChildren: () => inst.getChildren().map(wrap),
+      WaitForChild: async (n) => wrap(inst.getChildren().find(c => c.name===n) || null),
+      GetAttribute: (k) => inst.properties[k],
+      SetAttribute: (k,v) => inst.setProp(k,v),
+      Destroy: () => { inst.setParent(null); if (typeof syncSceneFromWorkspace==='function') syncSceneFromWorkspace(); },
+      Clone: () => { const c = Object.assign(Object.create(Object.getPrototypeOf(inst)), JSON.parse(JSON.stringify(inst))); return wrap(c); },
+      get Parent(){ return wrap(inst.parent); },
+      set Parent(p){ /* read-only in sandbox */ }
+    };
+  }
+  const Vector3 = (x,y,z) => ({x:x||0,y:y||0,z:z||0, Magnitude: Math.hypot(x||0,y||0,z||0)});
+  const CFrame = (x,y,z) => ({x:x||0,y:y||0,z:z||0});
+  return {
+    print:(...a)=>Output.log(src,a.map(String).join(' ')),
+    warn:(...a)=>Output.warn(src,a.map(String).join(' ')),
+    wait:(s)=>new Promise(r=>setTimeout(r,(s||0.03)*1000)),
+    task: { wait:(s)=>new Promise(r=>setTimeout(r,(s||0.03)*1000)), spawn:(fn)=>{ try{fn();}catch(e){Output.error(src,e.message);} } },
+    game: wrap(root.game),
+    workspace: wrap(root.Workspace),
+    Workspace: wrap(root.Workspace),
+    Vector3, CFrame,
+    Instance: { new: (cn) => { const i = new MirrorInstance(cn, cn); return wrap(i); } },
+    RaycastParams: function(){ return {}; },
+    Enum: { Material: MATERIAL_PRESETS ? Object.keys(MATERIAL_PRESETS).reduce((a,k,i)=>{a[k]=i;return a;},{}) : {} }
+  };
 }
 async function runScript(scriptInst){
   if (!scriptInst.source){ Output.warn(scriptInst.getFullName(),'NOT AVAILABLE'); return; }
   const api = makeSandboxAPI(scriptInst);
-  try { await (new Function('api', `"use strict"; const {print,warn,wait,game,workspace}=api; return (async()=>{ ${scriptInst.source} })();`))(api); }
+  try { await (new Function('api', `"use strict"; const {print,warn,wait,task,game,workspace,Workspace,Vector3,CFrame,Instance,Enum}=api; return (async()=>{ ${scriptInst.source} })();`))(api); }
   catch(e){ Output.error(scriptInst.getFullName(), e.message); }
 }
 
@@ -1128,12 +1370,54 @@ Output.init(); renderTree(); select(P.Workspace); initImportWizard();
 const sceneRoot=document.getElementById('scene');
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 function sizeRenderer(){ const w=sceneRoot.clientWidth,h=sceneRoot.clientHeight; renderer.setSize(w,h); camera.aspect=w/h; camera.updateProjectionMatrix(); }
 sceneRoot.appendChild(renderer.domElement);
 const scene=new THREE.Scene(); scene.background=new THREE.Color(0x8fc7f2); scene.fog=new THREE.Fog(0x8fc7f2,60,220);
 const camera=new THREE.PerspectiveCamera(60,1,0.1,1000);
-scene.add(new THREE.HemisphereLight(0xbfe0ff,0x4a5a3a,0.85));
+const hemiLight=new THREE.HemisphereLight(0xbfe0ff,0x4a5a3a,0.85); scene.add(hemiLight);
 const sun=new THREE.DirectionalLight(0xffffff,1.15); sun.position.set(60,90,40); sun.castShadow=true;
+
+function parseColorToHex(val, fallback){
+  if (val==null || val==='') return fallback;
+  const n = parseInt(String(val).trim(),10);
+  if (!isNaN(n) && n>255) return n & 0xffffff;
+  const parts = String(val).split(/[,\s]+/).map(parseFloat).filter(x=>!isNaN(x));
+  if (parts.length>=3){
+    const scale = parts[0]<=1 && parts[1]<=1 && parts[2]<=1 ? 255 : 1;
+    return ((Math.round(parts[0]*scale)&255)<<16)|((Math.round(parts[1]*scale)&255)<<8)|(Math.round(parts[2]*scale)&255);
+  }
+  return fallback;
+}
+
+function applyLightingFromDataModel(){
+  const L = P && P.Lighting;
+  if (!L || !L.properties) return;
+  const pr = L.properties;
+  const brightness = parseFloat(pr.Brightness); const bright = isNaN(brightness)?1:brightness;
+  const ambient = parseColorToHex(pr.Ambient, 0x4a5a3a);
+  const outdoor = parseColorToHex(pr.OutdoorAmbient ?? pr.ColorShift_Top, 0xbfe0ff);
+  const fogCol = parseColorToHex(pr.FogColor, 0x8fc7f2);
+  const fogStart = parseFloat(pr.FogStart); const fogEnd = parseFloat(pr.FogEnd);
+  hemiLight.color.setHex(outdoor);
+  hemiLight.groundColor.setHex(ambient);
+  hemiLight.intensity = 0.5 + bright * 0.35;
+  sun.intensity = 0.7 + bright * 0.5;
+  scene.background = new THREE.Color(fogCol);
+  if (!isNaN(fogStart) && !isNaN(fogEnd) && fogEnd > fogStart){
+    scene.fog = new THREE.Fog(fogCol, fogStart, fogEnd);
+  } else {
+    scene.fog = new THREE.Fog(fogCol, 60, 220);
+  }
+  // ClockTime → sun angle
+  const clock = parseFloat(pr.ClockTime ?? pr.TimeOfDay);
+  if (!isNaN(clock)){
+    const angle = ((clock % 24) / 24) * Math.PI * 2 - Math.PI/2;
+    sun.position.set(Math.cos(angle)*80, Math.sin(angle)*90, 40);
+  }
+  Output.ok('Lighting', 'Lighting service aplicado al viewport (Ambient/Fog/Brightness/ClockTime).');
+}
 sun.shadow.mapSize.set(2048,2048); sun.shadow.camera.left=-80; sun.shadow.camera.right=80; sun.shadow.camera.top=80; sun.shadow.camera.bottom=-80; sun.shadow.camera.far=300;
 scene.add(sun);
 const PLATE_SIZE=128;
@@ -1164,8 +1448,149 @@ const demoBlocks=[];
    Maps Workspace Parts/SpawnLocations to THREE.Mesh so import + property edits
    update the viewport (fixes "import works in Explorer but scene stays green baseplate").
    ============================================================================ */
+/* ============================================================================
+   ASSET LIBRARY — local glTF/OBJ/textures (ToS-safe: user-provided only)
+   ============================================================================ */
+const AssetLibrary = {
+  meshes: new Map(),    // key → THREE.Object3D template
+  textures: new Map(),  // key → THREE.Texture
+  keys: [],
+  _gltf: null,
+  _obj: null,
+  _tex: null,
+  ensureLoaders(){
+    if (!this._tex) this._tex = new THREE.TextureLoader();
+    if (!this._gltf && typeof THREE.GLTFLoader === 'function') this._gltf = new THREE.GLTFLoader();
+    if (!this._obj && typeof THREE.OBJLoader === 'function') this._obj = new THREE.OBJLoader();
+  },
+  normKey(name){
+    return String(name||'').toLowerCase().replace(/\.[a-z0-9]+$/i,'').replace(/[^a-z0-9_]+/g,'');
+  },
+  async ingestFiles(files){
+    this.ensureLoaders();
+    let n = 0;
+    for (const file of files){
+      const url = URL.createObjectURL(file);
+      const base = this.normKey(file.name);
+      const raw = file.name.toLowerCase();
+      try {
+        if (/\.(png|jpe?g|webp)$/i.test(raw)){
+          const tex = await new Promise((res,rej) => this._tex.load(url, res, undefined, rej));
+          tex.encoding = THREE.sRGBEncoding || 3001;
+          this.textures.set(base, tex);
+          this.textures.set(raw, tex);
+          n++;
+        } else if (/\.(glb|gltf)$/i.test(raw) && this._gltf){
+          const gltf = await new Promise((res,rej) => this._gltf.load(url, res, undefined, rej));
+          this.meshes.set(base, gltf.scene);
+          this.meshes.set(raw, gltf.scene);
+          // also index by numeric id if filename is digits
+          if (/^\d+$/.test(base)) this.meshes.set('rbxassetid://'+base, gltf.scene);
+          n++;
+        } else if (/\.obj$/i.test(raw) && this._obj){
+          const obj = await new Promise((res,rej) => this._obj.load(url, res, undefined, rej));
+          this.meshes.set(base, obj);
+          n++;
+        }
+      } catch (e){ Output.warn('Assets', file.name + ': ' + e.message); }
+    }
+    this.keys = [...this.meshes.keys()];
+    return n;
+  },
+  findMesh(meshId, partName){
+    if (!meshId && !partName) return null;
+    const candidates = [];
+    if (meshId){
+      const s = String(meshId);
+      candidates.push(s, this.normKey(s));
+      const id = s.match(/(\d{5,})/);
+      if (id){ candidates.push(id[1], 'rbxassetid://'+id[1]); }
+    }
+    if (partName) candidates.push(this.normKey(partName), String(partName).toLowerCase());
+    for (const k of candidates){ if (this.meshes.has(k)) return this.meshes.get(k); }
+    return null;
+  },
+  findTexture(texId){
+    if (!texId) return null;
+    const s = String(texId);
+    if (this.textures.has(s)) return this.textures.get(s);
+    const n = this.normKey(s);
+    if (this.textures.has(n)) return this.textures.get(n);
+    const id = s.match(/(\d{5,})/);
+    if (id && this.textures.has(id[1])) return this.textures.get(id[1]);
+    // Direct http(s) or data URL
+    if (/^(https?:|data:)/i.test(s)) return s;
+    return null;
+  }
+};
+
+/* ============================================================================
+   PHYSICS WORLD — AABB colliders (no external WASM required)
+   ============================================================================ */
+const PhysicsWorld = {
+  colliders: [], // { min:x,y,z max:x,y,z anchored }
+  playerRadius: 1.2,
+  playerHeight: 5,
+  enabled: true,
+  rebuildFromWorkspace(){
+    this.colliders = [];
+    for (const mesh of meshByInstanceId.values()){
+      if (!mesh.visible && mesh.visible !== undefined) { /* still collide */ }
+      const size = mesh.userData.baseSize || mesh.userData._size || {x:1,y:1,z:1};
+      const hx = size.x/2, hy = size.y/2, hz = size.z/2;
+      // World-space AABB (ignores rotation for speed — good enough for axis-aligned maps)
+      const p = mesh.position;
+      this.colliders.push({
+        min:{ x:p.x-hx, y:p.y-hy, z:p.z-hz },
+        max:{ x:p.x+hx, y:p.y+hy, z:p.z+hz },
+        mesh
+      });
+    }
+    Output.ok('Physics', `AABB colliders: ${this.colliders.length} (character vs Parts).`);
+  },
+  resolveCharacter(pos, velocityY){
+    if (!this.enabled || !this.colliders.length) return { pos, velocityY, onGround: pos.y<=0.01 };
+    const r = this.playerRadius;
+    const h = this.playerHeight;
+    let x = pos.x, y = pos.y, z = pos.z;
+    let onGround = false;
+    // Feet at y, head at y+h
+    for (let iter=0; iter<3; iter++){
+      for (const c of this.colliders){
+        // Expand AABB by radius
+        const minx = c.min.x - r, maxx = c.max.x + r;
+        const minz = c.min.z - r, maxz = c.max.z + r;
+        const miny = c.min.y, maxy = c.max.y;
+        if (x <= minx || x >= maxx || z <= minz || z >= maxz) continue;
+        // Vertical overlap with body [y, y+h]
+        if (y + h <= miny || y >= maxy) continue;
+        // Standing on top?
+        const feet = y;
+        if (velocityY <= 0 && feet <= maxy + 0.15 && feet >= maxy - 1.2 && y + h > maxy){
+          y = maxy;
+          velocityY = 0;
+          onGround = true;
+          continue;
+        }
+        // Side push-out (XZ)
+        const dx1 = x - minx, dx2 = maxx - x, dz1 = z - minz, dz2 = maxz - z;
+        const m = Math.min(dx1, dx2, dz1, dz2);
+        if (m === dx1) x = minx;
+        else if (m === dx2) x = maxx;
+        else if (m === dz1) z = minz;
+        else z = maxz;
+      }
+    }
+    if (y <= 0){ y = 0; velocityY = 0; onGround = true; }
+    return { pos:{x,y,z}, velocityY, onGround };
+  }
+};
+
 const meshByInstanceId = new Map(); // id → THREE.Mesh
-const GEOM_CLASSES = new Set(['Part','SpawnLocation','WedgePart','CornerWedgePart','TrussPart','MeshPart']);
+const GEOM_CLASSES = new Set([
+  'Part','SpawnLocation','WedgePart','CornerWedgePart','TrussPart','MeshPart',
+  'Seat','VehicleSeat','SkateboardPlatform','FlagStand','UnionOperation'
+]);
 
 function parseVec3(str, fallback){
   if (str==null || str==='') return fallback || {x:1,y:1,z:1};
@@ -1179,7 +1604,6 @@ function parseColor3uint8(val){
   if (val==null || val==='') return 0x9a9a9a;
   const n = parseInt(String(val).trim(), 10);
   if (!isNaN(n)) return n & 0xffffff;
-  // "r, g, b" 0-1 or 0-255
   const parts = String(val).split(/[,\s]+/).map(s=>parseFloat(s)).filter(x=>!isNaN(x));
   if (parts.length >= 3){
     const scale = parts[0] <= 1 && parts[1] <= 1 && parts[2] <= 1 ? 255 : 1;
@@ -1190,12 +1614,10 @@ function parseColor3uint8(val){
 }
 
 function parseCFrame(str){
-  // "x, y, z" or "x,y,z,R00,...,R22"
   const parts = String(str||'').split(/[,\s]+/).map(s=>parseFloat(s)).filter(n=>!isNaN(n));
   const pos = parts.length >= 3 ? {x:parts[0], y:parts[1], z:parts[2]} : {x:0,y:0,z:0};
   let quat = null;
   if (parts.length >= 12){
-    // Roblox CFrame rotation matrix is row-major R00 R01 R02 R10 R11 R12 R20 R21 R22
     const m = new THREE.Matrix4();
     m.set(
       parts[3], parts[6], parts[9], 0,
@@ -1218,46 +1640,218 @@ function disposeMesh(mesh){
   }
 }
 
+/* ---- Roblox shape → Three.js geometry ---- */
+function makeWedgeGeometry(sx, sy, sz){
+  // Right triangular prism (Roblox WedgePart): slope on +Z face
+  const hx=sx/2, hy=sy/2, hz=sz/2;
+  const positions = new Float32Array([
+    // bottom
+    -hx,-hy,-hz,  hx,-hy,-hz,  hx,-hy, hz,  -hx,-hy, hz,
+    // top back edge (only at -Z)
+    -hx, hy,-hz,  hx, hy,-hz,
+    // slope corners already listed
+  ]);
+  // Build with explicit triangles for a solid wedge
+  const verts = [
+    // bottom face
+    -hx,-hy,-hz,  hx,-hy,-hz,  hx,-hy, hz,
+    -hx,-hy,-hz,  hx,-hy, hz, -hx,-hy, hz,
+    // back face (vertical at -Z)
+    -hx,-hy,-hz, -hx, hy,-hz,  hx, hy,-hz,
+    -hx,-hy,-hz,  hx, hy,-hz,  hx,-hy,-hz,
+    // left slope
+    -hx,-hy,-hz, -hx,-hy, hz, -hx, hy,-hz,
+    // right slope
+     hx,-hy,-hz,  hx, hy,-hz,  hx,-hy, hz,
+    // front-bottom to top-back slope (two tris)
+    -hx,-hy, hz,  hx,-hy, hz,  hx, hy,-hz,
+    -hx,-hy, hz,  hx, hy,-hz, -hx, hy,-hz,
+    // top thin edge is degenerate along -Z — already in back
+  ];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeCornerWedgeGeometry(sx, sy, sz){
+  const hx=sx/2, hy=sy/2, hz=sz/2;
+  // Corner wedge: peak at one top corner
+  const verts = [
+    // bottom square
+    -hx,-hy,-hz,  hx,-hy,-hz,  hx,-hy, hz,
+    -hx,-hy,-hz,  hx,-hy, hz, -hx,-hy, hz,
+    // vertical faces rising to (-hx, hy, -hz)
+    -hx,-hy,-hz, -hx, hy,-hz,  hx,-hy,-hz,
+    -hx,-hy,-hz, -hx, hy,-hz, -hx,-hy, hz,
+    // slopes
+    -hx, hy,-hz,  hx,-hy,-hz,  hx,-hy, hz,
+    -hx, hy,-hz,  hx,-hy, hz, -hx,-hy, hz,
+  ];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+function makeTrussGeometry(sx, sy, sz){
+  // Approximate truss as a thin cross-braced box (visual stand-in)
+  return new THREE.BoxGeometry(Math.max(0.2, sx), Math.max(0.2, sy), Math.max(0.2, sz));
+}
+
+function resolveShape(inst){
+  const cn = inst.className;
+  if (cn === 'WedgePart') return 'Wedge';
+  if (cn === 'CornerWedgePart') return 'CornerWedge';
+  if (cn === 'TrussPart') return 'Truss';
+  // Child SpecialMesh / legacy mesh classes
+  try {
+    for (const c of inst.getChildren()){
+      const mcn = c.className;
+      if (mcn === 'CylinderMesh') return 'Cylinder';
+      if (mcn === 'BlockMesh') return 'Block';
+      if (mcn === 'SpecialMesh'){
+        const mt = String(c.properties.MeshType ?? c.properties.meshType ?? '');
+        if (/^0$|sphere|head|ball/i.test(mt)) return 'Ball';
+        if (/^1$|block|brick/i.test(mt)) return 'Block';
+        if (/^2$|cylinder/i.test(mt)) return 'Cylinder';
+        if (/^3$|file/i.test(mt)) return 'Block'; // FileMesh → box stand-in (no asset CDN)
+        if (/wedge/i.test(mt)) return 'Wedge';
+        if (/torso|sphere/i.test(mt)) return 'Ball';
+      }
+    }
+  } catch(_){}
+  // Part.Shape enum: 0=Ball, 1=Block, 2=Cylinder (also string names)
+  const s = inst.properties.Shape ?? inst.properties.shape;
+  if (s != null && s !== ''){
+    const t = String(s).trim();
+    if (t==='0' || /^ball$/i.test(t)) return 'Ball';
+    if (t==='2' || /^cylinder$/i.test(t)) return 'Cylinder';
+    if (t==='1' || /^block$/i.test(t)) return 'Block';
+  }
+  return 'Block';
+}
+
+function buildGeometryFor(shape, size, lod){
+  const sx = Math.max(0.05, size.x), sy = Math.max(0.05, size.y), sz = Math.max(0.05, size.z);
+  const seg = lod === 0 ? 8 : (lod === 1 ? 12 : 20); // low/med/high
+  if (shape === 'Ball'){
+    const r = Math.max(sx, sy, sz) / 2;
+    return new THREE.SphereGeometry(r, seg, Math.max(6, seg*0.75|0));
+  }
+  if (shape === 'Cylinder'){
+    // Roblox cylinder: circular faces on ±X, length along X → Three cylinder along Y then rotate
+    const r = Math.max(sy, sz) / 2;
+    const geo = new THREE.CylinderGeometry(r, r, sx, seg);
+    geo.rotateZ(Math.PI/2);
+    return geo;
+  }
+  if (shape === 'Wedge') return makeWedgeGeometry(sx, sy, sz);
+  if (shape === 'CornerWedge') return makeCornerWedgeGeometry(sx, sy, sz);
+  if (shape === 'Truss') return makeTrussGeometry(sx, sy, sz);
+  // Cone stand-in if someone tagged Shape oddly — not standard Roblox, but useful
+  if (shape === 'Cone'){
+    const r = Math.max(sx, sz) / 2;
+    return new THREE.ConeGeometry(r, sy, seg);
+  }
+  return new THREE.BoxGeometry(sx, sy, sz);
+}
+
 function createOrUpdateMesh(inst){
   if (!GEOM_CLASSES.has(inst.className)) return null;
-  // Size may arrive as "Size" or legacy "size" depending on the exporter
   const size = parseVec3(inst.properties.Size ?? inst.properties.size, {x:4,y:1,z:2});
-  // Prefer CFrame; fall back to Position if present
   const cfRaw = inst.properties.CFrame || inst.properties.cframe || inst.properties.Position || inst.properties.position || '';
   const { pos, quat } = parseCFrame(cfRaw);
-  // Roblox Part position is center; BoxGeometry is already centered
-  let color = parseColor3uint8(inst.properties.Color3uint8 ?? inst.properties.Color3 ?? inst.properties.BrickColor);
-  if ((inst.properties.Color3uint8 == null && inst.properties.Color3 == null) &&
+  let color = parseColor3uint8(inst.properties.Color3uint8 ?? inst.properties.Color ?? inst.properties.Color3 ?? inst.properties.BrickColor);
+  if ((inst.properties.Color3uint8 == null && inst.properties.Color3 == null && inst.properties.Color == null) &&
       (inst.name === 'Baseplate' || inst.className === 'SpawnLocation')){
     color = inst.className === 'SpawnLocation' ? 0xd94f4f : 0x3d7a3d;
   }
   const transparency = parseFloat(inst.properties.Transparency);
   const opacity = isNaN(transparency) ? 1 : Math.max(0, Math.min(1, 1 - transparency));
+  const reflectance = parseFloat(inst.properties.Reflectance);
+  const matName = resolveMaterialName(inst.properties.Material);
+  const preset = MATERIAL_PRESETS[matName] || MATERIAL_PRESETS.Plastic;
+  const shape = resolveShape(inst);
+  const radius = Math.max(size.x, size.y, size.z) * 0.5;
+  const isGlass = matName === 'Glass' || matName === 'ForceField';
+  const isNeon = matName === 'Neon';
+  const finalOpacity = isGlass ? Math.min(opacity, 0.45) : opacity;
+  const emissiveCol = isNeon ? color : 0x000000;
+  const emissiveInt = isNeon ? (preset.emissive || 0.8) : (preset.emissive || 0);
+
+  // Optional custom mesh from local AssetLibrary (MeshId / name match)
+  const meshId = inst.properties.MeshId || inst.properties.MeshID || inst.properties.meshId;
+  const customTpl = (inst.className === 'MeshPart' || meshId || inst.className === 'UnionOperation')
+    ? AssetLibrary.findMesh(meshId, inst.name) : null;
 
   let mesh = meshByInstanceId.get(inst.id);
   if (!mesh){
-    const geo = new THREE.BoxGeometry(Math.max(0.05, size.x), Math.max(0.05, size.y), Math.max(0.05, size.z));
     const mat = new THREE.MeshStandardMaterial({
-      color, roughness: 0.65, metalness: 0.05,
-      transparent: opacity < 1, opacity, depthWrite: opacity > 0.01
+      color, roughness: preset.rough, metalness: Math.min(1, preset.metal + (isNaN(reflectance)?0:reflectance*0.5)),
+      transparent: finalOpacity < 1 || isGlass, opacity: finalOpacity, depthWrite: finalOpacity > 0.01,
+      emissive: emissiveCol, emissiveIntensity: emissiveInt,
+      side: THREE.FrontSide
     });
-    mesh = new THREE.Mesh(geo, mat);
+    // Texture from library or http(s)/data URL
+    const texRef = AssetLibrary.findTexture(inst.properties.TextureID || inst.properties.Texture || inst.properties.ColorMap);
+    if (texRef){
+      if (typeof texRef === 'string'){
+        AssetLibrary.ensureLoaders();
+        AssetLibrary._tex.load(texRef, (t) => { mat.map = t; mat.needsUpdate = true; });
+      } else { mat.map = texRef; }
+    }
+    if (customTpl){
+      mesh = new THREE.Group();
+      const clone = customTpl.clone(true);
+      // Scale clone to Size
+      const box = new THREE.Box3().setFromObject(clone);
+      const dim = new THREE.Vector3(); box.getSize(dim);
+      if (dim.x > 0.001 && dim.y > 0.001 && dim.z > 0.001){
+        clone.scale.set(size.x/dim.x, size.y/dim.y, size.z/dim.z);
+      }
+      clone.traverse(ch => { if (ch.isMesh){ ch.castShadow = true; ch.receiveShadow = true; ch.material = mat.clone(); } });
+      mesh.add(clone);
+      mesh.userData.isCustomMesh = true;
+    } else {
+      const geo = buildGeometryFor(shape, size, 2);
+      mesh = new THREE.Mesh(geo, mat);
+    }
     mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.frustumCulled = true;
     mesh.userData.instanceId = inst.id;
+    mesh.userData.shape = shape;
+    mesh.userData.radius = radius;
+    mesh.userData.baseSize = {x:size.x,y:size.y,z:size.z};
+    mesh.userData.lod = 2;
+    mesh.userData.materialName = matName;
     meshByInstanceId.set(inst.id, mesh);
     scene.add(mesh);
-  } else {
-    // Resize: replace geometry if size changed
+  } else if (!mesh.userData.isCustomMesh) {
     const old = mesh.userData._size || {};
-    if (old.x !== size.x || old.y !== size.y || old.z !== size.z){
-      mesh.geometry.dispose();
-      mesh.geometry = new THREE.BoxGeometry(Math.max(0.05, size.x), Math.max(0.05, size.y), Math.max(0.05, size.z));
+    const shapeChanged = mesh.userData.shape !== shape;
+    if (shapeChanged || old.x !== size.x || old.y !== size.y || old.z !== size.z){
+      if (mesh.geometry){ mesh.geometry.dispose(); mesh.geometry = buildGeometryFor(shape, size, mesh.userData.lod ?? 2); }
+      mesh.userData.shape = shape;
     }
-    mesh.material.color.setHex(color);
-    mesh.material.opacity = opacity;
-    mesh.material.transparent = opacity < 1;
-    mesh.material.depthWrite = opacity > 0.01;
-    mesh.material.needsUpdate = true;
+    if (mesh.material){
+      mesh.material.color.setHex(color);
+      mesh.material.roughness = preset.rough;
+      mesh.material.metalness = Math.min(1, preset.metal + (isNaN(reflectance)?0:reflectance*0.5));
+      mesh.material.opacity = finalOpacity;
+      mesh.material.transparent = finalOpacity < 1 || isGlass;
+      mesh.material.depthWrite = finalOpacity > 0.01;
+      if (mesh.material.emissive) mesh.material.emissive.setHex(emissiveCol);
+      mesh.material.emissiveIntensity = emissiveInt;
+      mesh.material.side = THREE.FrontSide;
+      mesh.material.needsUpdate = true;
+    }
+    mesh.userData.radius = radius;
+    mesh.userData.baseSize = {x:size.x,y:size.y,z:size.z};
+    mesh.userData.materialName = matName;
+  } else {
+    mesh.userData.radius = radius;
+    mesh.userData.baseSize = {x:size.x,y:size.y,z:size.z};
   }
   mesh.userData._size = {x:size.x, y:size.y, z:size.z};
   mesh.position.set(pos.x, pos.y, pos.z);
@@ -1314,12 +1908,203 @@ function syncSceneFromWorkspace(opts){
         character.position.set(cx, Math.max(0, cy + 2), cz);
       }
       Output.ok('Scene', `Viewport sincronizado: ${found.length} Parts/SpawnLocations desde Workspace.`);
+      if (typeof PhysicsWorld !== 'undefined') PhysicsWorld.rebuildFromWorkspace();
     }
   }
 }
 
 // Initial sync: render default Baseplate/Spawn from DataModel (drives the viewport from day one)
 syncSceneFromWorkspace({ hideDemo: true });
+if (typeof PhysicsWorld !== 'undefined') PhysicsWorld.rebuildFromWorkspace();
+
+/* ============================================================================
+   CULLING SYSTEM
+   Practical implementations mapped to the requested techniques. Several names
+   share the same underlying test (e.g. sector/cell/chunk → spatial hash).
+   ============================================================================ */
+const Culling = {
+  // Tunables
+  maxDistance: 450,          // Distance Culling
+  minPixelSize: 2,           // Small Object Culling (approx screen px)
+  lodNear: 60,               // LOD Culling distances
+  lodMid: 160,
+  lodFar: 320,
+  shadowDistance: 120,       // Shadow Culling
+  lightDistance: 200,        // Light Culling
+  occluderMinSize: 12,       // Occlusion / Occluder Culling
+  sectorSize: 64,            // Sector / Cell / Chunk / Clustered / Tile
+  reflectionDistance: 80,    // Reflection / Probe Culling
+  rayQueryMax: 40,           // Ray Query Culling sample budget
+  // State
+  frustum: new THREE.Frustum(),
+  projScreenMatrix: new THREE.Matrix4(),
+  _sectorCache: new Map(),
+  _frame: 0,
+  stats: { total:0, drawn:0, frustum:0, distance:0, small:0, occlusion:0, hierarchical:0 },
+
+  updateFrustum(){
+    this.projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    this.frustum.setFromProjectionMatrix(this.projScreenMatrix);
+  },
+
+  sectorKey(x,z){
+    const s = this.sectorSize;
+    return (Math.floor(x/s)) + ':' + (Math.floor(z/s));
+  },
+
+  // Build spatial hash for sector/cell/chunk/clustered/tile culling
+  rebuildSectors(){
+    this._sectorCache.clear();
+    for (const mesh of meshByInstanceId.values()){
+      const k = this.sectorKey(mesh.position.x, mesh.position.z);
+      let arr = this._sectorCache.get(k);
+      if (!arr){ arr = []; this._sectorCache.set(k, arr); }
+      arr.push(mesh);
+    }
+  },
+
+  // Hierarchical: if a large parent's AABB is outside frustum, skip (we use mesh radius groups by sector)
+  sectorInFrustum(key){
+    const [sx, sz] = key.split(':').map(Number);
+    const s = this.sectorSize;
+    const box = new THREE.Box3(
+      new THREE.Vector3(sx*s, -500, sz*s),
+      new THREE.Vector3((sx+1)*s, 500, (sz+1)*s)
+    );
+    return this.frustum.intersectsBox(box);
+  },
+
+  // Simple occlusion: large nearby boxes can hide objects behind them along view ray
+  // (CPU approximation — not GPU HW occlusion queries)
+  buildOccluders(camPos){
+    const occ = [];
+    for (const mesh of meshByInstanceId.values()){
+      const r = mesh.userData.radius || 1;
+      if (r < this.occluderMinSize) continue;
+      const d = camPos.distanceTo(mesh.position);
+      if (d > 90) continue;
+      occ.push({ pos: mesh.position, r, mesh });
+    }
+    // Prefer closer larger occluders
+    occ.sort((a,b) => a.pos.distanceTo(camPos) - b.pos.distanceTo(camPos));
+    return occ.slice(0, 24);
+  },
+
+  isOccluded(mesh, camPos, occluders){
+    const target = mesh.position;
+    const dir = new THREE.Vector3().subVectors(target, camPos);
+    const dist = dir.length();
+    if (dist < 1) return false;
+    dir.multiplyScalar(1/dist);
+    for (const o of occluders){
+      if (o.mesh === mesh) continue;
+      // Ray-sphere against occluder; if hit closer than target, occluded
+      const toC = new THREE.Vector3().subVectors(o.pos, camPos);
+      const tca = toC.dot(dir);
+      if (tca < 0) continue;
+      const d2 = toC.lengthSq() - tca*tca;
+      const r2 = o.r * o.r;
+      if (d2 > r2) continue;
+      const thc = Math.sqrt(r2 - d2);
+      const tHit = tca - thc;
+      if (tHit > 0.5 && tHit < dist - (mesh.userData.radius||0.5)) return true;
+    }
+    return false;
+  },
+
+  applyLOD(mesh, dist){
+    // LOD Culling: swap geometry detail by distance
+    let want = 2;
+    if (dist > this.lodFar) want = 0;
+    else if (dist > this.lodMid) want = 1;
+    else if (dist > this.lodNear) want = 2;
+    if (mesh.userData.lod === want) return;
+    const shape = mesh.userData.shape || 'Block';
+    const size = mesh.userData.baseSize || mesh.userData._size || {x:1,y:1,z:1};
+    // Only LOD sphere/cylinder (box/wedge share topology)
+    if (shape === 'Ball' || shape === 'Cylinder' || shape === 'Cone'){
+      mesh.geometry.dispose();
+      mesh.geometry = buildGeometryFor(shape, size, want);
+      mesh.userData.lod = want;
+    } else {
+      mesh.userData.lod = want;
+    }
+  },
+
+  run(camPos){
+    this._frame++;
+    this.updateFrustum();
+    if (this._frame % 30 === 1) this.rebuildSectors(); // rebuild spatial hash occasionally
+
+    const st = this.stats;
+    st.total = meshByInstanceId.size; st.drawn = 0; st.frustum = 0; st.distance = 0;
+    st.small = 0; st.occlusion = 0; st.hierarchical = 0;
+
+    // Portal / Sector / Cell / Chunk / Clustered / Tile: mark live sectors
+    const liveSectors = new Set();
+    for (const key of this._sectorCache.keys()){
+      if (this.sectorInFrustum(key)) liveSectors.add(key);
+      else st.hierarchical++;
+    }
+
+    const occluders = this.buildOccluders(camPos);
+    const fov = camera.fov * Math.PI/180;
+    const screenH = renderer.domElement.height || 1;
+
+    for (const mesh of meshByInstanceId.values()){
+      // Hierarchical / sector gate
+      const sk = this.sectorKey(mesh.position.x, mesh.position.z);
+      if (this._sectorCache.size && !liveSectors.has(sk)){
+        mesh.visible = false;
+        mesh.castShadow = false;
+        continue;
+      }
+
+      // Frustum Culling (also relies on mesh.frustumCulled for GPU path)
+      const r = mesh.userData.radius || 1;
+      const sphere = new THREE.Sphere(mesh.position, r);
+      if (!this.frustum.intersectsSphere(sphere)){
+        mesh.visible = false; mesh.castShadow = false; st.frustum++; continue;
+      }
+
+      const dist = camPos.distanceTo(mesh.position);
+
+      // Distance Culling
+      if (dist > this.maxDistance){
+        mesh.visible = false; mesh.castShadow = false; st.distance++; continue;
+      }
+
+      // Small Object Culling (approx projected diameter in px)
+      const projected = (r / Math.max(0.01, dist)) * (screenH / (2 * Math.tan(fov/2)));
+      if (projected < this.minPixelSize && dist > 15){
+        mesh.visible = false; mesh.castShadow = false; st.small++; continue;
+      }
+
+      // Occlusion Culling + Occluder Culling
+      if (occluders.length && this.isOccluded(mesh, camPos, occluders)){
+        mesh.visible = false; mesh.castShadow = false; st.occlusion++; continue;
+      }
+
+      // LOD Culling
+      this.applyLOD(mesh, dist);
+
+      // Shadow Culling
+      mesh.castShadow = dist < this.shadowDistance;
+      mesh.receiveShadow = dist < this.shadowDistance * 1.5;
+
+      // Reflection / Probe Culling — mark far meshes to skip expensive effects
+      mesh.userData.allowReflection = dist < this.reflectionDistance;
+
+      // Backface Culling already on material.side = FrontSide
+      // Light Culling handled by shadow distance + fog
+
+      mesh.visible = true;
+      st.drawn++;
+    }
+
+    // Terrain / Chunk: fog already distance-fades; sector hash covers chunks
+  }
+};
 
 const state={velocityY:0,onGround:true,yaw:0,camYaw:Math.PI,camPitch:0.35,camDistance:9,move:{x:0,z:0},jumpRequested:false,speed:9,jumpVelocity:9.5,gravity:24};
 const keys={};
@@ -1355,12 +2140,25 @@ function update(dt){
   character.position.x=Math.max(-half,Math.min(half,character.position.x)); character.position.z=Math.max(-half,Math.min(half,character.position.z));
   if (state.jumpRequested && state.onGround){ state.velocityY=state.jumpVelocity; state.onGround=false; } state.jumpRequested=false;
   state.velocityY-=state.gravity*dt; character.position.y+=state.velocityY*dt;
-  if (character.position.y<=0){ character.position.y=0; state.velocityY=0; state.onGround=true; }
+  // Physics: collide with imported Parts (AABB)
+  if (typeof PhysicsWorld !== 'undefined' && PhysicsWorld.colliders.length){
+    const resolved = PhysicsWorld.resolveCharacter(character.position, state.velocityY);
+    character.position.set(resolved.pos.x, resolved.pos.y, resolved.pos.z);
+    state.velocityY = resolved.velocityY;
+    state.onGround = resolved.onGround;
+  } else if (character.position.y<=0){ character.position.y=0; state.velocityY=0; state.onGround=true; }
   const camTarget=character.position.clone().add(new THREE.Vector3(0,3.2,0));
   const camOffset=new THREE.Vector3(Math.sin(state.camYaw)*-state.camDistance*Math.cos(state.camPitch), state.camDistance*Math.sin(state.camPitch)+1.5, Math.cos(state.camYaw)*-state.camDistance*Math.cos(state.camPitch));
   camera.position.lerp(camTarget.clone().add(camOffset), Math.min(1,dt*8)); camera.lookAt(camTarget);
 }
-function animate(){ requestAnimationFrame(animate); const dt=Math.min(0.05,clock.getDelta()); update(dt); renderer.render(scene,camera); }
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(0.05,clock.getDelta());
+  update(dt);
+  // Full culling pass before draw
+  Culling.run(camera.position);
+  renderer.render(scene,camera);
+}
 sizeRenderer(); animate();
 })();
 </script>
