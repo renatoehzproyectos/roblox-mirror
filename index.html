@@ -486,21 +486,41 @@ function parseRbxlx(xmlText){
         if (tag==='string'||tag==='ProtectedString'||tag==='BinaryString') value = node.textContent;
         else if (tag==='bool') value = node.textContent.trim()==='true';
         else if (['float','double','int','int64','token'].includes(tag)) value = node.textContent.trim();
-        else if (tag==='Vector3'){ const x=node.querySelector('X')?.textContent??'0', y=node.querySelector('Y')?.textContent??'0', z=node.querySelector('Z')?.textContent??'0';
-          value = `${(+x).toFixed(2)}, ${(+y).toFixed(2)}, ${(+z).toFixed(2)}`; }
-        else if (tag==='CoordinateFrame' || tag==='CFrame'){
-          const X=node.querySelector('X')?.textContent, Y=node.querySelector('Y')?.textContent, Z=node.querySelector('Z')?.textContent;
+        else if (tag==='Vector3' || tag==='vector3' || tag==='Vector3int16'){
+          // Roblox uses <X>/<Y>/<Z>; some exporters use lowercase. Also accept bare text "x y z".
+          const getChild = (el, names) => {
+            for (const n of names){ const c = el.getElementsByTagName(n)[0]; if (c) return c.textContent; }
+            return null;
+          };
+          let x = getChild(node, ['X','x']), y = getChild(node, ['Y','y']), z = getChild(node, ['Z','z']);
+          if (x==null || y==null || z==null){
+            const nums = (node.textContent||'').trim().split(/[,\s]+/).map(parseFloat).filter(n=>!isNaN(n));
+            if (nums.length>=3){ x=nums[0]; y=nums[1]; z=nums[2]; }
+          }
+          x = x??'0'; y = y??'0'; z = z??'0';
+          value = `${(+x).toFixed(2)}, ${(+y).toFixed(2)}, ${(+z).toFixed(2)}`;
+        }
+        else if (tag==='CoordinateFrame' || tag==='CFrame' || tag==='coordinateframe'){
+          const getChild = (el, names) => {
+            for (const n of names){ const c = el.getElementsByTagName(n)[0]; if (c) return c.textContent; }
+            return null;
+          };
+          const X=getChild(node,['X','x']), Y=getChild(node,['Y','y']), Z=getChild(node,['Z','z']);
           if (X!=null && Y!=null && Z!=null){
-            const R00=node.querySelector('R00')?.textContent??'1', R01=node.querySelector('R01')?.textContent??'0', R02=node.querySelector('R02')?.textContent??'0';
-            const R10=node.querySelector('R10')?.textContent??'0', R11=node.querySelector('R11')?.textContent??'1', R12=node.querySelector('R12')?.textContent??'0';
-            const R20=node.querySelector('R20')?.textContent??'0', R21=node.querySelector('R21')?.textContent??'0', R22=node.querySelector('R22')?.textContent??'1';
+            const R00=getChild(node,['R00'])??'1', R01=getChild(node,['R01'])??'0', R02=getChild(node,['R02'])??'0';
+            const R10=getChild(node,['R10'])??'0', R11=getChild(node,['R11'])??'1', R12=getChild(node,['R12'])??'0';
+            const R20=getChild(node,['R20'])??'0', R21=getChild(node,['R21'])??'0', R22=getChild(node,['R22'])??'1';
             value = [X,Y,Z,R00,R01,R02,R10,R11,R12,R20,R21,R22].map(v=>(+v).toFixed(4)).join(', ');
           } else {
             value = (node.textContent||'').trim().slice(0,120);
           }
         }
         else if (tag==='Color3'){
-          const r=node.querySelector('R')?.textContent, g=node.querySelector('G')?.textContent, b=node.querySelector('B')?.textContent;
+          const getChild = (el, names) => {
+            for (const n of names){ const c = el.getElementsByTagName(n)[0]; if (c) return c.textContent; }
+            return null;
+          };
+          const r=getChild(node,['R','r']), g=getChild(node,['G','g']), b=getChild(node,['B','b']);
           if (r!=null && g!=null && b!=null){
             const ri=Math.round(Math.min(1,Math.max(0,+r))*255), gi=Math.round(Math.min(1,Math.max(0,+g))*255), bi=Math.round(Math.min(1,Math.max(0,+b))*255);
             value = String((ri<<16)|(gi<<8)|bi);
@@ -508,8 +528,14 @@ function parseRbxlx(xmlText){
         }
         else if (tag==='Color3uint8') value = node.textContent.trim();
         else value = node.textContent ? node.textContent.trim().slice(0,80) : '(unsupported)';
-        if (value!==undefined && value!==null){ stats.propsRecovered++; props[key]=value; }
-        if (key==='Name') name=value; if (key==='Source') source=value;
+        // Normalize known property names (Roblox XML sometimes uses lowercase "size")
+        const CANON = { size:'Size', Size:'Size', cframe:'CFrame', CFrame:'CFrame', position:'Position', Position:'Position',
+          color3uint8:'Color3uint8', Color3uint8:'Color3uint8', color3:'Color3', Color3:'Color3',
+          transparency:'Transparency', Transparency:'Transparency', anchored:'Anchored', Anchored:'Anchored',
+          cancollide:'CanCollide', CanCollide:'CanCollide', name:'Name', Name:'Name', source:'Source', Source:'Source' };
+        const canonKey = CANON[key] || key;
+        if (value!==undefined && value!==null){ stats.propsRecovered++; props[canonKey]=value; }
+        if (canonKey==='Name') name=value; if (canonKey==='Source') source=value;
       });
     }
     return { props, name, source };
@@ -1194,9 +1220,10 @@ function disposeMesh(mesh){
 
 function createOrUpdateMesh(inst){
   if (!GEOM_CLASSES.has(inst.className)) return null;
-  const size = parseVec3(inst.properties.Size, {x:4,y:1,z:2});
+  // Size may arrive as "Size" or legacy "size" depending on the exporter
+  const size = parseVec3(inst.properties.Size ?? inst.properties.size, {x:4,y:1,z:2});
   // Prefer CFrame; fall back to Position if present
-  const cfRaw = inst.properties.CFrame || inst.properties.Position || '';
+  const cfRaw = inst.properties.CFrame || inst.properties.cframe || inst.properties.Position || inst.properties.position || '';
   const { pos, quat } = parseCFrame(cfRaw);
   // Roblox Part position is center; BoxGeometry is already centered
   let color = parseColor3uint8(inst.properties.Color3uint8 ?? inst.properties.Color3 ?? inst.properties.BrickColor);
